@@ -14,6 +14,7 @@
  const wrap=v=>((v+180)%360+360)%360-180;
  const angleBlend=(old,v,dt)=>Number.isFinite(old)?wrap(old+wrap(v-old)*(1-Math.exp(-dt/80))):v;
  function geometry(g){
+  if(Number.isFinite(g.roadWheelAngle))return {wheel:g.roadWheelAngle*RAD,wheelbase:Number.isFinite(g.wheelbase)?g.wheelbase:null,forward:vec(g.localVelocity)?g.localVelocity[2]:null};
   const w=g.wheels;if(!Array.isArray(w)||w.length!==4||!vec(g.velocity))return null;
   if(w.some(x=>!vec(x.contactPoint)||!vec(x.contactHeading)||norm(x.contactHeading)<.7||norm(x.contactHeading)>1.3))return null;
   const front=mul(add(w[0].contactPoint,w[1].contactPoint),.5),rear=mul(add(w[2].contactPoint,w[3].contactPoint),.5);
@@ -37,7 +38,7 @@
  }
  class Model {
   constructor(options={}){this.storage=options.storage;this.carCache=new Map();this.savedAt=-Infinity;this.reset();}
-  reset(now=this.advance??0){this.handling=new Handling();if(this.grip&&this.car){const key=this.source+':'+this.car;this.grip.pause();this.carCache.set(key,this.grip);if(this.carCache.size>6)this.carCache.delete(this.carCache.keys().next().value);this.persist(now);}this.grip=new Grip.Estimator();this.packet=null;this.advance=null;this.car=null;this.source=null;this.loadsSupported=false;this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
+  reset(now=this.advance??0){this.handling=new Handling();if(this.grip&&this.car){const key=this.source+':'+this.car;this.grip.pause();this.carCache.set(key,this.grip);if(this.carCache.size>6)this.carCache.delete(this.carCache.keys().next().value);this.persist(now);}this.grip=new Grip.Estimator();this.packet=null;this.advance=null;this.car=null;this.source=null;this.epoch=undefined;this.sourceTime=null;this.loadSupport=[false,false,false,false];this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
   persist(now){
    if(!this.storage||!this.car||!this.grip)return;
    try{this.storage.setItem('moza-grip-v1:'+this.source+':'+this.car,JSON.stringify(this.grip.snapshot(now)));}catch{}
@@ -45,8 +46,9 @@
   update(s,now){
    if(!Number.isFinite(now)||now<0){this.car=null;this.reset(0);return this.view;}
    s=Context.sanitize(s);const g=s.game;
-   if(!s.connected||!g?.available||g.paused===true||g.inMenu===true||g.telemetryVersion!==2||!Number.isInteger(g.packet)||!Array.isArray(g.wheels)||g.wheels.length!==4){this.reset(now);return this.view;}
-   if((this.car!==null&&this.car!==g.carModel)||(this.source!==null&&this.source!==g.source))this.reset(now);
+   if(!s.connected||!g?.available||g.paused===true||g.inMenu===true||!Number.isInteger(g.packet)||!Array.isArray(g.wheels)||g.wheels.length!==4){this.reset(now);return this.view;}
+   if((this.car!==null&&this.car!==g.carModel)||(this.source!==null&&this.source!==g.source)||(this.epoch!==undefined&&this.epoch!==g.streamEpoch)||(Number.isFinite(this.sourceTime)&&Number.isFinite(g.sampleTime)&&g.sampleTime<this.sourceTime))this.reset(now);
+   this.epoch=g.streamEpoch;this.sourceTime=g.sampleTime;
    if(this.car===null&&g.carModel){const key=g.source+':'+g.carModel;if(this.carCache.has(key))this.grip=this.carCache.get(key);else if(this.storage){try{this.grip.restore(JSON.parse(this.storage.getItem('moza-grip-v1:'+key)),now);}catch{}}}
    this.car=g.carModel;this.source=g.source;
    if(g.packet===this.packet){
@@ -57,12 +59,12 @@
    const gap=this.advance===null?0:now-this.advance,dt=gap>0&&gap<250?gap:16;
    if(gap>250){this.grip.pause();this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));}
    this.packet=g.packet;this.advance=now;
-   const loads=g.wheels.map(w=>w.load),loadValid=loads.every(v=>Number.isFinite(v)&&v>=0&&v<100000),total=loads.reduce((a,v)=>a+v,0);
-   if(loadValid&&total>500&&total<100000)this.loadsSupported=true;
-   const loadKnown=loadValid&&(this.loadsSupported||g.source==='acpmf_physics');
-   const threshold=clamp(total/4*.025,40,100);
+   const loads=g.wheels.map(w=>w.load),validLoads=loads.map(v=>Number.isFinite(v)&&v>=0&&v<100000),total=loads.reduce((a,v,i)=>a+(validLoads[i]?v:0),0);
+   validLoads.forEach((valid,i)=>{if(valid&&loads[i]>=40)this.loadSupport[i]=true;});
+   const loadKnownWheels=validLoads.map((valid,i)=>valid&&(this.loadSupport[i]||g.capabilities?.loads===true)),loadKnown=loadKnownWheels.every(Boolean);
+   const threshold=clamp(total/Math.max(1,validLoads.filter(Boolean).length)*.025,40,100);
    const unloaded=this.loadState.map((st,i)=>{
-    if(!loadKnown){st.unloaded=false;st.transition=null;return false;}
+    if(!loadKnownWheels[i]){st.unloaded=false;st.transition=null;return false;}
     const next=st.unloaded?loads[i]<threshold*2.5:loads[i]<threshold;
     if(next===st.unloaded)st.transition=null;
     else{if(st.transition===null)st.transition=now;if(now-st.transition>=(next?60:40)){st.unloaded=next;st.transition=null;}}
@@ -73,8 +75,9 @@
    let steering=null;
    const moving=Math.abs(g.speedKmh)>=10&&Number.isFinite(g.speedKmh);
    const axle=(start)=>{
-    const list=g.wheels.slice(start,start+2).filter((w,j)=>loadKnown&&!unloaded[start+j]&&w.load>=threshold*2.5&&Number.isFinite(w.angle)&&Math.abs(w.angle)<=Math.PI/2);
-    return list.length?list.reduce((a,w)=>a+w.angle*w.load,0)/list.reduce((a,w)=>a+w.load,0)*RAD:null;
+    const weighted=loadKnownWheels.slice(start,start+2).every(Boolean);
+    const list=g.wheels.slice(start,start+2).filter((w,j)=>!unloaded[start+j]&&(!loadKnownWheels[start+j]||w.load>=threshold*2.5)&&Number.isFinite(w.angle)&&Math.abs(w.angle)<=Math.PI/2);
+    return list.length?list.reduce((a,w)=>a+w.angle*(weighted?w.load:1),0)/list.reduce((a,w)=>a+(weighted?w.load:1),0)*RAD:null;
    };
    const nativeFront=axle(0),nativeRear=axle(2);
    const lateral=moving?{front:nativeFront,rear:nativeRear}:{front:null,rear:null};
@@ -102,7 +105,7 @@
    // Slip angle is not remaining grip. Do not infer tyre saturation from a fixed angle
    // or a front/rear angle difference without a calibrated force-versus-slip relationship.
    if(steering){steering.trend=null;steering.gripAssessment='unavailable';steering.unloaded=unloaded.some(Boolean);}
-   const grip=this.grip.update(s,now,unloaded,steering,loadKnown);
+   const grip=this.grip.update(s,now,unloaded,steering,loadKnownWheels);
    if(steering)steering.gripAssessment=grip.available?'estimated':grip.reason;
    const drive=grip.driveCue,brake=grip.brakeCue;
    let decel=null;
@@ -111,15 +114,15 @@
     if(this.samples.length&&(t<=this.samples.at(-1).t||t-this.samples.at(-1).t>250))this.samples=[];
     this.samples.push({t,v:g.speedKmh/3.6});this.samples=this.samples.filter(x=>t-x.t<=100);
     const span=t-this.samples[0].t;
-    if(span>=40&&this.samples.length>=3){
+    if(span>=40&&this.samples.length>=2){
      const mt=this.samples.reduce((a,x)=>a+(x.t-t)/1000,0)/this.samples.length,mv=this.samples.reduce((a,x)=>a+x.v,0)/this.samples.length;
      let numerator=0,denominator=0;for(const x of this.samples){const dt=(x.t-t)/1000-mt;numerator+=dt*(x.v-mv);denominator+=dt*dt;}
      const value=-numerator/denominator/9.80665;
-     if(Number.isFinite(value)&&Math.abs(value)<5){this.filtered.decel=value;if(g.brake>.05&&g.speedKmh>5&&loadKnown&&unloaded.filter(Boolean).length<=2)decel=this.filtered.decel;}
+     if(Number.isFinite(value)&&Math.abs(value)<10){this.filtered.decel=value;if(g.brake>.05&&g.speedKmh>5)decel=this.filtered.decel;}
     }
    }else{this.samples=[];delete this.filtered.decel;}
    if(now-this.savedAt>3000){this.persist(now);this.savedAt=now;}
-   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,unloaded,steering,lateral,drive,brake,decel,grip};this.view.handling=this.handling.update(s,now,this.view);return this.view;
+   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,loadKnownWheels,unloaded,steering,lateral,drive,brake,decel,grip};this.view.handling=this.handling.update(s,now,this.view);return this.view;
   }
  }
  const api={Model,geometry};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.DrivingAssist=api;

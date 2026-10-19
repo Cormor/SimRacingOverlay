@@ -71,7 +71,7 @@ function bar(x,value,color,label,online){const y=230,h=440,w=38;ctx.lineJoin='ro
 function statuses(s,online){
  const st={...(s.game?.statuses||{})},now=performance.now();
  for(const key of ['absActive','tcActive','escActive']){if(online&&st[key]===true)latch[key]=now+220;if(online&&now<(latch[key]||0))st[key]=true;}
- const active=online&&s.game?.available&&(s.game.telemetryVersion!==2||assistView.fresh)?['ABS','TC','ESC'].filter(label=>st[label.toLowerCase()+'Active']===true):[];
+ const active=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true?['ABS','TC','ESC'].filter(label=>st[label.toLowerCase()+'Active']===true):[];
  for(let i=0;i<active.length;i++){const label=active[i],x=500+(i-(active.length-1)/2)*156,y=826,color='#ffda56';ctx.fillStyle='#473c13f0';ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(x-73,y-21,146,42,11);ctx.fill();ctx.stroke();
   ctx.save();ctx.translate(x-45,y);ctx.strokeStyle=color;ctx.lineWidth=2.5;
   if(label==='ABS'){ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(0,0,17,-1.1,1.1);ctx.stroke();ctx.beginPath();ctx.arc(0,0,17,Math.PI-1.1,Math.PI+1.1);ctx.stroke();text('!',0,0,18,color);}
@@ -110,10 +110,11 @@ function wheelSlip(s,online,a=assistView,only=null){
  const wheels=s.game?.wheels||[],now=performance.now();
  for(let i=0;i<4;i++){
   if(only!==null&&i!==only)continue;
-  const w=wheels[i],valid=online&&s.game?.available&&(s.game.telemetryVersion!==2||a.fresh)&&w&&Number.isFinite(w.ratio),ratio=valid?w.ratio:0,zero=i<2?295:645;
+  const w=wheels[i],nativeRatio=Number.isFinite(w?.ratio),reported=nativeRatio?w.ratio:w?.slipFeedback,valid=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true&&Number.isFinite(reported),ratio=valid?reported:0,zero=i<2?295:645;
   const airborne=a.fresh&&a.unloaded[i];
   if(airborne){lockState[i].since=0;lockState[i].until=0;}
-  const candidate=valid&&!airborne&&Math.abs(s.game.speedKmh)>=10&&s.game.brake>.15&&ratio<=-.8&&Math.abs(w.omega)<2.5;
+  const stoppedRolling=Number.isFinite(w?.omega)?Math.abs(w.omega)<2.5:Number.isFinite(w?.speedMs)&&Math.abs(w.speedMs)<.75;
+  const candidate=valid&&nativeRatio&&!airborne&&Math.abs(s.game.speedKmh)>=10&&s.game.brake>.15&&ratio<=-.8&&stoppedRolling;
   if(candidate){if(!lockState[i].since)lockState[i].since=now;if(now-lockState[i].since>=80)lockState[i].until=now+300;}else lockState[i].since=0;
   const isLocked=valid&&now<(lockState[i].until||0),magnitude=Math.abs(ratio),braking=ratio<0;
   const color=isLocked?LOCK_RED:!valid?'#8591a4':slipColor(magnitude,braking);
@@ -138,7 +139,7 @@ function wheelSlip(s,online,a=assistView,only=null){
   }
   ctx.shadowBlur=(isLocked?15:0)*paintScale;ctx.beginPath();ctx.moveTo(bx-15,zero);ctx.lineTo(bx+15,zero);ctx.strokeStyle=isLocked?LOCK_RED:'#aabace';ctx.lineWidth=isLocked?5:3;ctx.stroke();
   if(isLocked){ctx.shadowColor=LOCK_RED;ctx.shadowBlur=(18)*paintScale;}
-  if(valid&&(magnitude>=.005||isLocked))text((braking?'-':'+')+Math.min(999,magnitude*100).toFixed(0)+'%',tx,zero-5,38,isLocked?'#fff1f2':color);
+  if(valid&&nativeRatio&&(magnitude>=.005||isLocked))text((braking?'-':'+')+Math.min(999,magnitude*100).toFixed(0)+'%',tx,zero-5,38,isLocked?'#fff1f2':color);
   ctx.restore();
  }
 }
@@ -326,8 +327,9 @@ function render(now){runtimePerf.renders++;
   text(knobPositions[n]===null?'—':String(knobPositions[n]+1),e.x,e.y,29,'#f1f7ff');
   if(e.b.some(b=>pressed.has(b)))circle(e.x,e.y,73,'#ffffff00','#ffdc48',4);
  }
- for(const c of controls)text(String(c.b[0]),c.x,c.y,c.r<20?18:23,'#eafaff');
- const extra=[...pressed].filter(n=>!controls.some(c=>c.b.includes(n)));if(extra.length)text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
+ for(const c of controls){const active=c.b.filter(b=>pressed.has(b));if(active.length)text(active.join('·'),c.x,c.y,c.r<20?18:23,'#eafaff');}
+ const extra=[...pressed].filter(n=>!controls.some(c=>c.b.includes(n)));
+ if(extra.length)text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
  ctx.restore();
  uiInfo.waiting=!demo&&telemetryWaiting(s.game,performance.now());waitingBadge(uiInfo.waiting);
  });

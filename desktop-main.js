@@ -24,7 +24,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
    if(!exiting){exiting=true;win.webContents.executeJavaScript('window.overlayEditor?.flushSaveNow() ?? ({ok:true})').then(result=>{if(result?.ok)exitPrepared=true;else{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));}exiting=false;last='';apply();}).catch(()=>{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));exiting=false;last='';});}return;
   }
   const display=selectedDisplay();
-  const revision=['overlay.js','assist.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
+  const revision=['overlay.js','assist.js','realtime-response.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
   const displays=screen.getAllDisplays(),d=s.monitor>0?displays[Math.min(displays.length-1,s.monitor-1)]:screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=d.bounds,scene=desktopScene(s,d);saveScene(scene);
   applying=true;suppressUntil=Date.now()+500;win.setBounds({...area});

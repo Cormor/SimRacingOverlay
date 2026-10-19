@@ -6,23 +6,37 @@
  const vector=(v,b)=>Array.isArray(v)&&v.length===3&&v.every(x=>number(x,-b,b)!==null)?v.slice():null;
  const dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0),sub=(a,b)=>a.map((v,i)=>v-b[i]);
  const unit=v=>Math.hypot(...v)>1e-6?v.map(x=>x/Math.hypot(...v)):null;
+ function roadBasis(g){
+  const reported=g.roadBasis;
+  if(reported&&vector(reported.forward,1.1)&&vector(reported.right,1.1)){
+   const forward=unit(reported.forward),right=forward&&unit(sub(reported.right,forward.map(x=>x*dot(reported.right,forward))));
+   if(forward&&right)return {forward,right};
+  }
+  const w=g.wheels;if(!Array.isArray(w)||w.length!==4||w.some(x=>!vector(x.contactPoint,1e7)||!vector(x.contactNormal,1.1)))return null;
+  const n=unit(w.reduce((s,x)=>s.map((v,i)=>v+x.contactNormal[i]),[0,0,0]));if(!n)return null;
+  const project=v=>sub(v,n.map(x=>x*dot(v,n)));
+  const forward=unit(project(w[0].contactPoint.map((v,i)=>v+w[1].contactPoint[i]-w[2].contactPoint[i]-w[3].contactPoint[i])));
+  if(!forward)return null;
+  const track=project(w[1].contactPoint.map((v,i)=>v+w[3].contactPoint[i]-w[0].contactPoint[i]-w[2].contactPoint[i]));
+  const right=unit(sub(track,forward.map(x=>x*dot(track,forward))));return right?{forward,right}:null;
+ }
  function sanitize(s){
   if(!s||typeof s!=='object'||!s.game||typeof s.game!=='object')return {...s,game:{available:false}};
   const src=s.game;
   if(!Array.isArray(src.wheels)||src.wheels.length!==4||src.wheels.some(w=>!w||typeof w!=='object'))return {...s,game:{available:false}};
   const g={...src};
-  for(const [k,lo,hi] of [['speedKmh',0,650],['gas',0,1],['brake',0,1],['clutch',0,1],['sampleTime',0,1e15]])g[k]=number(src[k],lo,hi);
+  for(const [k,lo,hi] of [['speedKmh',0,650],['gas',0,1],['brake',0,1],['clutch',0,1],['sampleTime',0,1e15],['roadWheelAngle',-Math.PI/2,Math.PI/2],['wheelbase',1,5]])g[k]=number(src[k],lo,hi);
   for(const [k,b] of [['velocity',250],['localVelocity',250],['angularVelocity',100],['accG',30]])g[k]=vector(src[k],b);
   g.wheels=src.wheels.map(w=>{
    const n={...w};
-   for(const [k,lo,hi] of [['load',0,100000],['fx',-200000,200000],['fy',-200000,200000],['mz',-100000,100000],['angle',-Math.PI,Math.PI],['ratio',-10,100],['omega',-5000,5000],['pressurePsi',.1,150],['temperatureRaw',1,600],['temperatureC',-80,250],['camberRaw',-1.6,1.6],['suspensionTravelRaw',-1,2],['slipFeedback',0,100],['lockFeedback',0,100]])n[k]=number(w[k],lo,hi);
+   for(const [k,lo,hi] of [['load',0,100000],['fx',-200000,200000],['fy',-200000,200000],['mz',-100000,100000],['angle',-Math.PI,Math.PI],['ratio',-100,1000],['omega',-5000,5000],['speedMs',-400,400],['pressurePsi',.1,150],['temperatureRaw',1,600],['temperatureC',-80,250],['camberRaw',-1.6,1.6],['suspensionTravelRaw',-1,2],['slipFeedback',-100,100],['lockFeedback',0,100]])n[k]=number(w[k],lo,hi);
    for(const [k,b] of [['contactPoint',1e7],['contactNormal',1.1],['contactHeading',1.1]])n[k]=vector(w[k],b);
    // A false or absent grass flag is not affirmative evidence of a sealed road.
    n.surface=typeof w.surface==='string'&&w.surface.length<40?w.surface:w.onLooseSurface===true?'loose':null;
    return n;
   });
   if(g.speedKmh===null)g.available=false;
-  if(src.source==='acpmf_physics'&&g.speedKmh===0&&src.rpm===0&&g.wheels.every(w=>w.load===0&&w.fx===0&&w.fy===0&&w.contactPoint?.every(v=>v===0)&&w.contactHeading?.every(v=>v===0))){g.available=false;g.reason='empty-physics-state';}
+  if(g.speedKmh===0&&src.rpm===0&&g.wheels.every(w=>w.load===0&&w.fx===0&&w.fy===0&&w.contactPoint?.every(v=>v===0)&&w.contactHeading?.every(v=>v===0))){g.available=false;g.reason='empty-physics-state';}
   return {...s,game:g};
  }
  function condition(w){return {surface:w.surface||null,pressure:w.pressurePsi??null,temp:w.temperatureC??w.temperatureRaw??null,tempKind:finite(w.temperatureC)?'C':'raw',camber:w.camberRaw??null};}
@@ -108,5 +122,5 @@
    if(best&&(!other||other.error>best.error*1.2+.015))this.gFit=best;
   }
  }
- const api={sanitize,condition,compatible,anchor,Context};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TelemetryContext=api;
+ const api={sanitize,roadBasis,condition,compatible,anchor,Context};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.TelemetryContext=api;
 })(typeof window!=='undefined'?window:globalThis);

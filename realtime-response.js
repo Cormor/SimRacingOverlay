@@ -2,7 +2,7 @@
 // Current-frame response display. No ABS/TC inputs, persistent peak, or driving commands.
 (function(root){
  const finite=Number.isFinite,clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
- const WINDOW_MS=100,VERSION='directional-response-v5';
+ const WINDOW_MS=100,VERSION='directional-response-v8';
  // Display scales, NOT measured optimum slip or a universal friction coefficient.
  const K_SCALE=.16,A_SCALE=.14;
  function marginFromElasticity(e){
@@ -13,7 +13,8 @@
  }
  // Directional gain is conditioned on stable cross-slip and load: not a full tyre law.
  function axisResponse(rows,axis){
-  if(rows.length<3||rows.at(-1).time-rows[0].time<40||rows.some(x=>!x.forceObserved))return null;
+  const observation=axis==='longitudinal'?'forceXObserved':'forceYObserved';
+  if(rows.length<3||rows.at(-1).time-rows[0].time<40||rows.some(x=>!(x[observation]??x.forceObserved)))return null;
   const key=axis==='longitudinal'?'k':'a',cross=key==='k'?'a':'k',force=key==='k'?'qx':'qy',last=rows.at(-1);
   if(Math.min(...rows.map(x=>x.load))<Math.max(...rows.map(x=>x.load))*.88)return null;
   const x=rows.map(p=>Math.abs(p[key])),y=rows.map(p=>p[force]),c=rows.map(p=>Math.abs(p[cross]));
@@ -41,6 +42,7 @@
   update(s,now,unloaded,steering,loadKnown){
    if(this.last!==null&&(now<=this.last||now-this.last>100))this.reset();this.last=now;
    const g=s.game,speed=Math.abs(g.speedKmh||0)/3.6,rest=speed<.5;
+   const loadAt=i=>Array.isArray(loadKnown)?!!loadKnown[i]:!!loadKnown;
    // Feed-forward is based on an observed change in actual road-wheel angle, not speed alone.
    const roadAngle=finite(steering?.wheel)?steering.wheel*Math.PI/180:null;
    this.steeringHistory=this.steeringHistory.filter(p=>now-p.time<=WINDOW_MS);
@@ -51,12 +53,12 @@
    const steeringLead=-steerRate*.1*coupling*.35;
 
    const wheels=g.wheels.map((w,i)=>{
-    const contact=loadKnown&&finite(w.load)&&w.load>=40;
-    const physical=finite(w.angle)&&finite(w.ratio),feedback=finite(w.slipFeedback)||finite(w.lockFeedback);
-    const valid=(contact||!loadKnown)&&(physical||feedback);
-    if(!valid||unloaded[i]){this.history[i]=[];return {available:valid,unloaded:!!unloaded[i]||loadKnown&&w.load<40,remaining:0,confidence:0,pressure:0,trend:0,method:'unloaded-or-missing'};}
-    const k=physical?w.ratio:0,a=physical?Math.tan(w.angle):0,u=Math.hypot(k,a),hasForce=contact&&finite(w.fx)&&finite(w.fy),q=hasForce?Math.hypot(w.fx,w.fy)/w.load:0;
-    const p={time:now,u,q,k,a,qx:hasForce?Math.abs(w.fx)/w.load:0,qy:hasForce?Math.abs(w.fy)/w.load:0,load:w.load,forceObserved:hasForce},old=this.history[i];
+    const contact=loadAt(i)&&finite(w.load)&&w.load>=40;
+    const hasRatio=finite(w.ratio),hasAngle=finite(w.angle),physical=hasAngle||hasRatio,feedback=finite(w.slipFeedback)||finite(w.lockFeedback);
+    const valid=(contact||!loadAt(i))&&(physical||feedback);
+    if(!valid||unloaded[i]){this.history[i]=[];return {available:valid,unloaded:!!unloaded[i]||loadAt(i)&&w.load<40,remaining:0,confidence:0,pressure:0,trend:0,method:'unloaded-or-missing'};}
+    const k=hasRatio?w.ratio:0,a=hasAngle?Math.tan(clamp(w.angle,-Math.PI/2+.001,Math.PI/2-.001)):0,u=Math.hypot(k,a),hasFx=contact&&finite(w.fx),hasFy=contact&&finite(w.fy),hasForce=hasFx&&hasFy,q=hasForce?Math.hypot(w.fx,w.fy)/w.load:0;
+    const p={time:now,u,q,k,a,qx:hasFx?Math.abs(w.fx)/w.load:0,qy:hasFy?Math.abs(w.fy)/w.load:0,load:w.load,forceObserved:hasForce,forceXObserved:hasFx,forceYObserved:hasFy},old=this.history[i];
     // No interpolation across reversal or a contact/load discontinuity.
     if(old.length){const prev=old.at(-1);if(w.load/prev.load<.8||w.load/prev.load>1.25||k*prev.k<-.0001||a*prev.a<-.0001)old.length=0;}
     const rows=old.filter(x=>now-x.time<=WINDOW_MS);rows.push(p);this.history[i]=rows.slice(-16);
@@ -75,11 +77,11 @@
       elasticity=clamp((uq/uu)*u/q,-1,2);localWeight=clamp((spread-.005)/.015)*clamp((span-40)/40);confidence=.12+localWeight*.58;
      }
     }
-    const proxy=physical?Math.exp(-((k/K_SCALE)**2+(a/A_SCALE)**2)):1-clamp(Math.max(w.slipFeedback||0,w.lockFeedback||0));
+    const proxy=physical?Math.exp(-((k/K_SCALE)**2+(a/A_SCALE)**2)):1-clamp(Math.max(Math.abs(w.slipFeedback||0),w.lockFeedback||0));
     const local=elasticity===null?null:marginFromElasticity(elasticity);
     // The instantaneous proxy bounds an optimistic noisy local slope. Never reuse yesterday's peak.
     let remaining=rest?1:local===null?proxy:proxy+(Math.min(proxy,local)-proxy)*localWeight;
-    const axisResponses=hasForce?['longitudinal','lateral'].map(axis=>axisResponse(rows,axis)).filter(Boolean):[];
+    const axisResponses=(hasFx||hasFy)&&hasRatio&&hasAngle?['longitudinal','lateral'].map(axis=>axisResponse(rows,axis)).filter(Boolean):[];
     // A lost longitudinal response must not be hidden by a lateral-force increase in the force norm.
     for(const response of axisResponses)if(!rest)remaining=Math.min(remaining,proxy+(Math.min(proxy,response.margin)-proxy)*response.weight);
     const overrun=rest?0:Math.max(0,...axisResponses.map(r=>r.overrun));
@@ -100,7 +102,7 @@
     return {available:true,unloaded:false,remaining,projectedRemaining,axisResponses,overrun,lateralNow,lateralFuture,aRate,kRate,steeringLead:commandedLead,confidence,pressure:1-remaining,trend,
      method:localWeight>.5?'short-local-response':'instant-slip-proxy',localWeight,elasticity,slipRate,qRate,spanMs:span,
      longitudinalPressure:(1-remaining)*(share?longitudinal/share:0),lateralPressure:(1-remaining)*(share?lateral/share:0),
-     braking:k<-.005&&(!hasForce||w.fx<0),positiveDrive:k>.005&&(!hasForce||w.fx>0),angle:physical?w.angle:0,load:contact?w.load:1,
+     braking:hasRatio&&k<-.005,positiveDrive:hasRatio&&k>.005,angle:hasAngle?w.angle:null,load:contact?w.load:1,
      low:rest?1:local===null?0:clamp(remaining-.2),high:rest?1:local===null?1:clamp(remaining+.2)};
    });
    const axles={};
@@ -108,7 +110,7 @@
     const ws=wheels.slice(axle*2,axle*2+2),live=ws.filter(w=>w.available&&!w.unloaded),support=live.length/2;
     // Each wheel contributes half: the surviving side determines a single-wheel axle at half scale.
     const currentValue=live.reduce((n,w)=>n+w.remaining,0)/2,value=live.reduce((n,w)=>n+w.projectedRemaining,0)/2,trend=live.length?live.reduce((n,w)=>n+w.trend,0)/live.length:0;
-    axles[axle?'rear':'front']={available:ws.every((w,j)=>w.available||unloaded[axle*2+j]||loadKnown&&g.wheels[axle*2+j].load<40),sides:ws.map(w=>({available:w.available,unloaded:w.unloaded,value:w.unloaded?0:w.projectedRemaining??0,current:w.unloaded?0:w.remaining,overrun:w.overrun||0})),overrun:live.reduce((n,w)=>n+(w.overrun||0),0)/2,currentReserve:{value:currentValue},forecastDrop:currentValue-value,reserve:{value,low:Math.min(value,live.reduce((n,w)=>n+w.low,0)/2),high:live.reduce((n,w)=>n+w.high,0)/2},rawReserve:{value},confidence:live.length?Math.min(...live.map(w=>w.confidence)):0,support,unloadedSides:ws.map(w=>w.unloaded),loadKnown,trend,
+    axles[axle?'rear':'front']={available:ws.every((w,j)=>w.available||unloaded[axle*2+j]||loadAt(axle*2+j)&&g.wheels[axle*2+j].load<40),sides:ws.map(w=>({available:w.available,unloaded:w.unloaded,value:w.unloaded?0:w.projectedRemaining??0,current:w.unloaded?0:w.remaining,overrun:w.overrun||0})),overrun:live.reduce((n,w)=>n+(w.overrun||0),0)/2,currentReserve:{value:currentValue},forecastDrop:currentValue-value,reserve:{value,low:Math.min(value,live.reduce((n,w)=>n+w.low,0)/2),high:live.reduce((n,w)=>n+w.high,0)/2},rawReserve:{value},confidence:live.length?Math.min(...live.map(w=>w.confidence)):0,support,unloadedSides:ws.map(w=>w.unloaded),loadKnown:loadAt(axle*2)&&loadAt(axle*2+1),trend,
      responseObserved:live.some(w=>w.method==='short-local-response'),methods:live.map(w=>w.method),reason:!support?'unloaded':rest?'low-speed':support<1?'single-wheel':'realtime'};
    }
    const front=wheels.slice(0,2).filter(w=>w.available&&!w.unloaded),sum=front.reduce((n,w)=>n+w.load,0);
@@ -144,7 +146,7 @@
     return {label:'',mode:'release-reference',severity,overrun:Math.max(0,...ws.map(w=>w.overrun||0)),source:VERSION,evidence};
    };
 
-   return {version:VERSION,available:front.length>0,reserve:axles.front.reserve,axles,wheels,needle,steeringState,steeringPressure:lateralPressure,
+   return {version:VERSION,available:wheels.some(w=>w.available),reserve:axles.front.reserve,axles,wheels,needle,steeringState,steeringPressure:lateralPressure,
     // Compatibility flags describe display levels, not recommended actions.
     easeSteering:false,indication:active&&lateralPressure>.01,gripLow:active&&lateralPressure>.5,lift:false,brakeRelease:false,
     driveCue:pedal(drivePressure,driveWheels,g.gas),brakeCue:pedal(brakePressure,brakeWheels,g.brake),

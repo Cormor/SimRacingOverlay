@@ -49,6 +49,7 @@ static class PhysicsTelemetry {
    airDensity=Number(b,284,.2,2),airTemperatureRaw=Number(b,288,-80,600),roadTemperatureRaw=Number(b,292,-80,600),
    finalFFRaw=Number(b,308,-100,100),
    fieldPolicy="optional finite-range values; raw units/support unconfirmed; no zero-filled force or peak-mu",
+   capabilities=new {forces=true,loads=true,slipRatio=true,slipAngle=true,contactGeometry=true},
    statuses=new {absActive=Active(b,676)==true||Number(b,252,0,100)>.01||Number(b,796,0,100)>.01,
     tcActive=Active(b,672)==true||Number(b,204,0,100)>.01,engineRunning=Active(b,780),ignition=Active(b,772),pitLimiter=Active(b,248),
     escActive=(object)null,absSetting=Number(b,252,0,100),tcSetting=Number(b,204,0,100)}};
