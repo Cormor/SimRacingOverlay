@@ -1,0 +1,58 @@
+# SimRacingOverlay
+
+赛车遥测透明叠加层：可显示在桌面上，也可作为 OBS 浏览器源使用。包括输入可视化、逐轮滑移与余量趋势、转向状态、踏板提示和 G 力球。每个控件可独立移动、缩放、调透明度和调整层级。
+
+## 下载与开始
+
+在 [Releases](https://github.com/Cormor/SimRacingOverlay/releases) 下载 **Windows-x64.zip**，不要下载 GitHub 自动生成的 Source code 压缩包。
+
+1. 解压到任意普通文件夹，双击 **Install.cmd**。默认安装到当前用户的应用目录。
+2. 安装器查找现有 SimHub 和 OBS。写入 SimHub 安装目录时可能请求一次管理员权限。
+3. 设置页会自动打开。核对总转向角，按需学习方向盘、独立踏板和一组或两组手刹。两个手刹相加后限制到 100%。
+4. 下次正常重启 SimHub 后，在插件列表允许 **SimRacingOverlay**。安装器不替你重启游戏或 SimHub。
+5. OBS 正在运行时，其脚本登记会等到 OBS 关闭后处理。之后打开 OBS 时，脚本会启动 overlay，并在当前场景添加名为 **SimRacingOverlay** 的浏览器源。首次登记前也可在“工具 → 脚本”手动加载安装目录里的 `obs-overlay.lua`。
+
+安装时登记一个当前用户启动观察器：登录后在后台等待 SimHub / OBS，任一程序打开就启动 overlay。首次安装后立即生效，无需重启 Windows。桌面托盘可打开设置、隐藏画面、切换编辑。快捷键 **Ctrl+Alt+M** 进入 / 退出编辑，退出时保存。OBS 与桌面可独立显示；只要隐藏桌面，OBS 的源仍可工作。
+
+## 支持范围
+
+| 数据 / 设备 | 行为与限制 |
+| --- | --- |
+| ACR（Assetto Corsa Rally） | 从共享内存读取逐轮物理数据，支持本项目的轮胎与转向趋势显示。 |
+| SimHub 支持的其他游戏 | 本插件导出标准化数据。速度、挡位、转速、踏板和 G 力等以游戏实际提供为准；不提供的逐轮物理量不会被伪造，部分辅助不显示。 |
+| DirectInput 方向盘、踏板、手刹 | 自动枚举，支持不同品牌和多个独立设备；学习轴行程 / 反向。仅测试了本地设备与模拟映射，不能保证所有驱动和设备。 |
+| 按钮 | 通用虚拟布局，支持重新学习编号；无法自动知道任意方向盘的实体位置和外形。 |
+| MOZA 灯色 | 可选只读观察器读取 Pit House / SimHub 已发送的已识别灯光协议；不是硬件灯光执行回执，也不修改方向盘灯光设置。其他型号回退到软件灯效。 |
+| 方向盘仪表屏 | 公共版使用独立绘制的通用仪表，不包含个人 Pit House 屏幕布局或品牌产品图片。 |
+
+余量和推头 / 甩尾提示是基于遥测的状态趋势，不是实测摩擦系数或保证安全的抓地极限。不同游戏暴露的数据不同，不能把 ACR 的完整能力理解为所有游戏都支持。
+
+## 便携安装、自定义路径
+
+安装器会检查运行中的程序、卸载注册表、开始菜单和常用安装目录。找不到便携版时，在 PowerShell 中运行：
+
+```powershell
+.\Install.ps1 -SimHubPath 'D:\Apps\SimHub' -ObsPath 'D:\Apps\obs-studio' -InstallPath 'D:\Apps\SimRacingOverlay'
+```
+
+OBS 便携配置不在常见位置时，可再加 `-ObsConfig 'D:\CustomOBSConfig'`。首次安装前最好正常关闭 OBS；安装器不改全局画布和其他来源。
+
+## 更新与卸载
+
+更新前关闭本软件和启动观察器，以及 SimHub（若需要更新插件）。重新运行新包的安装器，已有设置、校准和控件位置会保留。安装器发现目标应用正在运行时会停止升级，不覆盖运行文件。
+
+开始菜单中的“卸载”只移除本软件的关联项和插件，保留配置与安装文件。请先关闭 OBS 和 SimHub；如 SimHub 在受保护目录，可能需要右键以管理员身份运行 `Uninstall.ps1`。确认不再需要后可自行删除安装目录。安装过程对 OBS 场景集合保留本地备份，位于 `runtime/integration-backup`。
+
+手动停止：运行 `Stop-Overlay.ps1`，此操作暂停自动拉起。再次点击开始菜单的 SimRacingOverlay 恢复。它不会关闭 SimHub / OBS / Pit House。
+
+## 隐私
+
+不含作者的设备配置、用户路径、录像、日志、OBS 场景或原始 Git 历史。运行数据仅写本机安装目录的 `runtime`，设置仅写 `settings.json` 和 `assets/layout.json`；输入服务仅绑定 `127.0.0.1`，不提供局域网服务。不向项目作者上传遥测。分享问题时不要直接打包整个安装目录；其中可能包含你自己的设备名称、设备标识、路径和遥测。
+
+## 源码构建
+
+见 [构建说明](docs/BUILD.md)。安装包包含对应源码；第三方组件按各自许可证分发，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 许可
+
+使用与 AudioSubtitleOverlay 相同的 **Non-Commercial Source-Available License 1.0**，个人非商业使用允许，商业使用须获得授权。这是公开源码的非商业许可证，**不是 OSI 开源许可证**。详见 [LICENSE](LICENSE) 和 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。

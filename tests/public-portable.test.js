@@ -1,0 +1,5 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {Model}=require('../g-ball.js');
+test('standardized SimHub G values work without ACR wheel geometry',()=>{const m=new Model();let v;for(let t=0;t<=160;t+=20)v=m.update({available:true,source:'SimHub-generic',carModel:'fixture',packet:t/20,accG:[.4,0,-.7],sampleTime:t},t);assert.ok(v.current);assert.equal(v.current.lateral,.4);assert.equal(v.current.longitudinal,-.7);assert.ok(v.peak>.8);assert.ok(v.scale<=1.2);});
+test('one-frame G spike cannot expand peak; unavailable data expires after 30 seconds',()=>{const m=new Model();for(let t=0;t<=160;t+=20)m.update({available:true,source:'SimHub-generic',carModel:'fixture',packet:t/20,accG:[.2,0,0],sampleTime:t},t);const before=m.view(160).peak;m.update({available:true,source:'SimHub-generic',carModel:'fixture',packet:9,accG:[10,0,0],sampleTime:180},180);assert.equal(m.view(180).peak,before);m.update({available:false},200);assert.equal(m.view(200).peak,before);const v=m.update({available:false},30201);assert.equal(v.peak,0);assert.equal(v.current,null);assert.ok(v.envelope.every(x=>x===0));});

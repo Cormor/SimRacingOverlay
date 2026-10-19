@@ -1,0 +1,9 @@
+/runtime/
+/dist/
+/build/
+/data/
+/local/
+/assets/layout.json
+/settings.json
+*.pyc
+__pycache__/

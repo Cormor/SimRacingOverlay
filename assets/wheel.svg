@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1315" height="1197" viewBox="0 0 1315 1197">
+<defs><radialGradient id="rim"><stop offset="0.73" stop-color="#0b111b"/><stop offset="0.83" stop-color="#344454"/><stop offset="0.9" stop-color="#18242f"/><stop offset="1" stop-color="#070d15"/></radialGradient><linearGradient id="metal" x2="0" y2="1"><stop stop-color="#536777"/><stop offset=".5" stop-color="#1b2a38"/><stop offset="1" stop-color="#344655"/></linearGradient><pattern id="carbon" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M0 0h8v8H0zM8 8h8v8H8z" fill="#223441"/><path d="M8 0h8v8H8zM0 8h8v8H0z" fill="#182936"/></pattern></defs>
+<circle cx="657.5" cy="598.5" r="548" fill="none" stroke="#03080e" stroke-width="90"/><circle cx="657.5" cy="598.5" r="545" fill="none" stroke="url(#rim)" stroke-width="96"/>
+<path d="M245 437Q650 270 1070 437L1050 635 802 713 740 1028H575L514 713 265 635Z" fill="url(#metal)" stroke="#0b1520" stroke-width="12"/>
+<path d="M300 458Q655 355 1010 458L1000 593 770 650 705 883H610L545 650 315 593Z" fill="url(#carbon)" stroke="#5c7485" stroke-width="3"/>
+<rect x="525" y="338" width="265" height="92" rx="16" fill="#07131e" stroke="#718898" stroke-width="4"/>
+<rect x="640" y="51" width="35" height="95" rx="7" fill="#f2d344"/>
+<circle cx="657.5" cy="600" r="65" fill="#10202d" stroke="#6f899b" stroke-width="4"/>
+<path d="M623 600h69m-35-34v68" stroke="#8ce5e0" stroke-width="5" stroke-linecap="round"/>
+</svg>
