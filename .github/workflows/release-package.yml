@@ -1,6 +1,11 @@
 name: Package Windows release
 on:
   workflow_dispatch:
+    inputs:
+      release_id:
+        description: Existing draft release ID
+        required: true
+        type: string
 permissions:
   contents: write
 concurrency:
@@ -24,9 +29,7 @@ jobs:
       - name: Upload complete package to draft release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ inputs.release_id }}
         run: |
-          version=$(cat VERSION)
-          tag="v$version"
-          test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = true
-          gh release upload "$tag" "dist/SimRacingOverlay-$version-Windows-x64.zip" dist/SHA256SUMS.txt --clobber
+          python3 tools/upload_release.py
           cat dist/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
