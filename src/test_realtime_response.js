@@ -13,7 +13,7 @@ for(let t=1000;t<=1140;t+=20){v=step(warmed,x,t);const c=step(cold,x,t);if(t>=11
 assert(warmed.history.every(h=>h.every(p=>1140-p.time<=100)));
 // A short linear response stays productive; a local plateau is visibly exhausted without ABS.
 function ramp(plateau){const m=new Estimator();let v;for(let t=0;t<=100;t+=25){const p=make(),k=.03+t*.0005;p.game.wheels.forEach(w=>{w.angle=0;w.ratio=k;w.fy=0;w.fx=3000*(plateau?.65:k*12);});v=step(m,p,t);}return v;}
-const linear=ramp(false),plateau=ramp(true);assert(plateau.axles.front.responseObserved);assert(plateau.axles.front.reserve.value<.001);assert(linear.axles.front.currentReserve.value>.7);assert(linear.axles.front.reserve.value<=linear.axles.front.currentReserve.value);
+const linear=ramp(false),plateau=ramp(true);assert(plateau.axles.front.responseObserved);assert(plateau.wheels.every(w=>w.directions.longitudinal.estimate.value<.05&&w.directions.longitudinal.danger>.9));assert(plateau.wheels[0].remaining===linear.wheels[0].remaining,'fit cannot rewrite measured main state');assert(linear.axles.front.currentReserve.value>.7);assert(linear.axles.front.reserve.value<=linear.axles.front.currentReserve.value);
 // Recovery, discontinuities, reversal: no stale slope reused.
 s=make();s.game.wheels.forEach(w=>{w.angle=-.3;w.ratio=.4;});m=new Estimator();v=step(m,s,0);assert(v.steeringState.front>.8&&v.steeringState.rear>.8);
 s.game.wheels.forEach(w=>{w.angle=.03;w.ratio=-.02;});v=step(m,s,25);assert.equal(v.needle,0);assert(v.axles.front.reserve.value>.9);
@@ -50,15 +50,15 @@ console.log('PASS: push/rotate/both-slide semantic axis; speed-alone invariance;
 function directional(mode){const m=new Estimator(),s=make();s.game.gas=0;s.game.brake=.8;let v;for(let t=0;t<=100;t+=25){s.game.wheels.forEach(w=>{w.ratio=-(.04+t*.0005);w.angle=.025;w.fx=-3000*(mode==='declining'?.9-t*.003:.7);w.fy=3000*(.1+t*.004);});v=step(m,s,t);}return v;}
 let directionalPlateau=directional('plateau');
 assert(directionalPlateau.wheels.every(w=>w.axisResponses.some(r=>r.axis==='longitudinal'&&r.state==='plateau')));
-assert(directionalPlateau.axles.front.reserve.value<.005);
-const declining=directional('declining');assert(declining.axles.front.overrun>.1);assert(declining.brakeCue.overrun>.1);assert(declining.axles.front.reserve.value<.005);
+assert(directionalPlateau.wheels.every(w=>w.directions.longitudinal.estimate.value<.05));
+const declining=directional('declining');assert(declining.axles.front.overrun>.1);assert(declining.brakeCue.overrun>.1);assert(declining.wheels.every(w=>w.directions.longitudinal.estimate.value<.05));
 assert(declining.axles.front.sides.every(s=>s.overrun>0));
 // A single frame / constant slip cannot establish a missing peak; no fabricated overrun.
 s=make();m=new Estimator();for(let t=0;t<=100;t+=25)v=step(m,s,t);assert.equal(v.axles.front.overrun,0);
 console.log('PASS: directional braking plateau despite combined force growth; independently measured declining-response overrun; no negative margin invented from steady data.');
 
 // Normal slip with increasing useful force must not request lift/brake release.
-for(const braking of [false,true]){m=new Estimator();s=make();s.game.gas=braking?0:.7;s.game.brake=braking?.7:0;for(let t=0;t<=100;t+=25){const k=.025+t*.0002;s.game.wheels.forEach(w=>{w.angle=.001;w.ratio=braking?-k:k;w.fx=(braking?-1:1)*k*15*w.load;w.fy=0;});v=step(m,s,t);}assert.equal(braking?v.brakeCue:v.driveCue,null);}
+for(const braking of [false,true]){m=new Estimator();s=make();s.game.gas=braking?0:.7;s.game.brake=braking?.7:0;for(let t=0;t<=100;t+=25){const k=.025+t*.0002;s.game.wheels.forEach(w=>{w.angle=.001;w.ratio=braking?-k:k;w.fx=(braking?-1:1)*k*15*w.load;w.fy=0;});v=step(m,s,t);}assert((braking?v.brakeCue:v.driveCue).mode==='risk-trend'&&(braking?v.brakeCue:v.driveCue).severity<.3);}
 // Rear handbrake-induced slip does not become a foot-brake release request.
 s=make();s.handbrake=100;s.game.gas=0;s.game.brake=.8;s.game.wheels.forEach((w,i)=>{w.ratio=i>=2?-.95:0;w.fx=i>=2?-2000:0;w.angle=0;w.fy=0;});assert.equal(step(new Estimator(),s,0).brakeCue,null);
 console.log('PASS: productive slip never implies release; observed plateau/decline and gross-slip fallback; handbrake rear exclusion.');

@@ -37,7 +37,7 @@
  el('resetOpacity').onclick=()=>change(c=>{c.opacity=1;c.textOpacity=1;c.imageOpacity=1;});
  el('uniform').onchange=()=>{const v=Number(el('uniform').value);if(Number.isFinite(v))change(c=>{const old=Math.sqrt(c.sx*c.sy),ratio=v/old;c.sx*=ratio;c.sy*=ratio;});};
  el('resetWidth').onclick=()=>change(c=>c.sx=1);el('resetHeight').onclick=()=>change(c=>c.sy=1);
- el('resetPosition').onclick=()=>change(c=>{c.x=0;c.y=0;});el('resetSize').onclick=()=>change(c=>{c.sx=1;c.sy=1;});
+ el('resetPosition').onclick=()=>change(c=>{c.x=0;c.y=0;});el('resetSize').onclick=()=>change(c=>{c.sx=c.sy=L.defaultScale(selected);});
  function layer(dir){change((c,l)=>{const order=L.definitions.slice().sort((a,b)=>l.controls[a.id].z-l.controls[b.id].z);const from=order.findIndex(d=>d.id===selected);const to=dir==='top'?order.length-1:dir==='bottom'?0:Math.max(0,Math.min(order.length-1,from+dir));const [item]=order.splice(from,1);order.splice(to,0,item);order.forEach((d,z)=>l.controls[d.id].z=z);});}
  el('back').onclick=()=>layer(-1);el('front').onclick=()=>layer(1);el('top').onclick=()=>layer('top');el('bottom').onclick=()=>layer('bottom');
  el('finish').onclick=()=>{if(flushSaveNow().ok)desktopOverlay.finishEditing();};

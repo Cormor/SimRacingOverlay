@@ -105,7 +105,8 @@
    // Slip angle is not remaining grip. Do not infer tyre saturation from a fixed angle
    // or a front/rear angle difference without a calibrated force-versus-slip relationship.
    if(steering){steering.trend=null;steering.gripAssessment='unavailable';steering.unloaded=unloaded.some(Boolean);}
-   const grip=this.grip.update(s,now,unloaded,steering,loadKnownWheels);
+   // Physics derivatives use the producer clock; arrival time only owns freshness/UI.
+   const grip=this.grip.update(s,Number.isFinite(g.sampleTime)?g.sampleTime:now,unloaded,steering,loadKnownWheels);
    if(steering)steering.gripAssessment=grip.available?'estimated':grip.reason;
    const drive=grip.driveCue,brake=grip.brakeCue;
    let decel=null;

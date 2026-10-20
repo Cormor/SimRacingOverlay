@@ -5,7 +5,7 @@ const image=new Image();image.src='assets/wheel.svg';
 const params=new URLSearchParams(location.search),demo=params.get('demo')==='1',qa=params.get('qa')==='1';
 let paintScale=1;
 let state={connected:false},lastGood=0,angle=0,qaClock=null;
-const uiInfo={version:'1.0.1',ambientKnobs:false,ambientButtons:false,waiting:false};
+const uiInfo={version:'1.1.0',ambientKnobs:false,ambientButtons:false,waiting:false};
 const assistModel=new DrivingAssist.Model({storage:qa||typeof localStorage==='undefined'?null:localStorage});let assistView={fresh:false,unloaded:[false,false,false,false]};
 // Fixed-size counters, no per-frame logging. Recording derives rates from counter deltas.
 const runtimePerf={startedAt:performance.now(),polls:0,errors:0,renders:0,uniquePackets:0,lastPacket:null,algorithm:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)},network:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)}};
@@ -166,49 +166,38 @@ function responseColor(value){
  return stops.at(-1)[1];
 }
 function pedalAssist(x,cue){
- if(!cue||!(cue.severity>.01))return;
+ if(!cue||!(cue.severity>0))return;
  // One signal only. Real pedal fill is bottom-up; release reference blooms TOP -> DOWN on its border.
- const strength=Math.max(0,Math.min(1,cue.severity)),l=x-19,r=x+19,top=230,end=top+Math.max(12,440*strength),color=rgbMix('#ffdc7a','#ff244f',strength);
- const path=()=>{ctx.beginPath();ctx.moveTo(l,end);ctx.lineTo(l,top+12);ctx.quadraticCurveTo(l,top,l+12,top);ctx.lineTo(r-12,top);ctx.quadraticCurveTo(r,top,r,top+12);ctx.lineTo(r,end);};
+ const strength=Math.max(0,Math.min(1,cue.severity)),l=x-19,r=x+19,top=230,end=top+440*strength,corner=Math.min(12,440*strength),opacity=Math.sqrt(strength),color=rgbMix('#ffdc7a','#ff244f',strength);
+ const path=()=>{ctx.beginPath();ctx.moveTo(l,end);ctx.lineTo(l,top+corner);ctx.quadraticCurveTo(l,top,l+corner,top);ctx.lineTo(r-corner,top);ctx.quadraticCurveTo(r,top,r,top+corner);ctx.lineTo(r,end);};
  ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=color;ctx.shadowColor=color;
- ctx.globalAlpha=.28;ctx.lineWidth=12+strength*5;ctx.shadowBlur=(22+strength*20)*paintScale;path();ctx.stroke();
- ctx.globalAlpha=1;ctx.lineWidth=4+strength*3;ctx.shadowBlur=(12+strength*12)*paintScale;path();ctx.stroke();ctx.restore();
+ ctx.globalAlpha=.28*opacity;ctx.lineWidth=8+strength*5;ctx.shadowBlur=(22+strength*20)*paintScale;path();ctx.stroke();
+ ctx.globalAlpha=opacity;ctx.lineWidth=2+strength*5;ctx.shadowBlur=(12+strength*12)*paintScale;path();ctx.stroke();ctx.restore();
 }
-function axleReserve(online,a,key,x){
- const grip=online&&a.fresh?a.grip?.axles?.[key]:null,r=grip?.reserve,valid=grip?.available&&r;
- const y=94,w=210,h=18,left=x-w/2;
- text(key==='front'?'前轮响应':'后轮响应',x,28,20,'#bac9d8');
- const signed=valid&&(grip.rawReserve?.value??r.value)<.005&&grip.overrun>.015?-grip.overrun:r?.value;
- const round=v=>Math.round(Math.max(-1,Math.min(1,v))*20)*5;
- const color=valid?responseColor(signed):'#8091a4';
- const estimate=valid?(signed<0?'≈−'+Math.max(5,Math.abs(round(signed)))+'%':(grip.reason==='low-speed'||grip.reason==='unloaded'?'':'≈')+String(round(signed)).padStart(2,' ')+'%'):'—';
- text(estimate,x,61,valid?36:24,color);
- ctx.save();ctx.setLineDash([]);
- for(let side=0;side<2;side++){
-  const bx=left+side*(w/2+1),bw=w/2-1,unloaded=valid&&grip.unloadedSides?.[side];
-  const part=grip?.sides?.[side],value=part?.value??r?.value??0,current=Math.max(value,part?.current??grip?.currentReserve?.value??value),overrun=part?.overrun||0;
-  ctx.shadowBlur=(0)*paintScale;ctx.fillStyle='#1d2b39';ctx.strokeStyle='#788b9e';ctx.lineWidth=2;
-  ctx.beginPath();ctx.roundRect(bx,y-h/2,bw,h,5);ctx.fill();ctx.stroke();
-  if(unloaded){
-   // The ENTIRE anatomical left/right half is empty and outlined, never a tiny end bracket.
-   ctx.clearRect(bx+2,y-h/2+2,bw-4,h-4);ctx.strokeStyle='#f5fcff';ctx.lineWidth=3;ctx.shadowColor='#e8f7ff';ctx.shadowBlur=(12)*paintScale;
-   ctx.beginPath();ctx.roundRect(bx,y-h/2,bw,h,5);ctx.stroke();continue;
-  }
-  if(!valid)continue;
-  // Both normal fills approach the shared centre. Overrun reverses along the outline.
-  const at=level=>side===0?bx+bw*level:bx+bw*(1-level);
-  const partColor=responseColor(value);ctx.save();ctx.beginPath();ctx.roundRect(bx,y-h/2,bw,h,5);ctx.clip();
-  ctx.fillStyle=partColor;ctx.fillRect(Math.min(at(0),at(value)),y-h/2,bw*Math.max(0,Math.min(1,value)),h);
-  if(current-value>.015){ctx.fillStyle=partColor+'55';ctx.fillRect(Math.min(at(value),at(current)),y-h/2,bw*(current-value),h);ctx.strokeStyle=partColor;ctx.lineWidth=2;
-   for(let v=value;v<current;v+=8/bw){ctx.beginPath();ctx.moveTo(at(v),y+h/2);ctx.lineTo(at(Math.min(v+7/bw,current)),y-h/2);ctx.stroke();}}
-  ctx.fillStyle='#f3fbff';ctx.fillRect(at(Math.min(1,current))-1,y-h/2,2,h);ctx.restore();
-  if(overrun>.015){const inner=at(1),end=at(1-Math.min(1,overrun));
-   ctx.strokeStyle='#ff183c';ctx.lineWidth=4;ctx.shadowColor='#ff183c';ctx.shadowBlur=(10)*paintScale;ctx.lineJoin='round';ctx.lineCap='round';
-   ctx.beginPath();ctx.moveTo(end,y-h/2);ctx.lineTo(inner,y-h/2);ctx.lineTo(inner,y+h/2);ctx.lineTo(end,y+h/2);
-   if(overrun>=.999){ctx.lineTo(end,y-h/2);}ctx.stroke();}
-
+// Two long lateral rails on each side: FRONT above REAR, both fill toward the wheel centre.
+// Longitudinal information lives only at the actual throttle/brake borders.
+function wheelLateral(cx,cy,part,unloaded,valid,side){
+ const d=part?.directions?.lateral,known=valid&&d?.available;
+ const value=known?Math.max(0,Math.min(1,d.current)):0;
+ const width=190,height=18,left=cx-width/2,warning=known?d.danger||0:0;
+ const shape=()=>{ctx.beginPath();ctx.roundRect(left,cy-height/2,width,height,6);};
+ ctx.save();ctx.lineJoin='round';ctx.shadowBlur=0;shape();ctx.fillStyle='#142333';ctx.fill();
+ if(unloaded){ctx.strokeStyle='#f5fcff';ctx.lineWidth=3;ctx.shadowColor='#e8f7ff';ctx.shadowBlur=14*paintScale;ctx.stroke();ctx.restore();return;}
+ if(known){
+  ctx.save();shape();ctx.clip();ctx.fillStyle=responseColor(value);
+  ctx.fillRect(side===0?left:left+width*(1-value),cy-height/2,width*value,height);ctx.restore();
  }
- ctx.restore();
+ const secondary=known&&Number.isFinite(d.estimate?.value)?Math.max(0,Math.min(1,d.estimate.value)):value;
+ const evidence=d?.estimate?.evidence||0,richness=.5+.5*Math.max(evidence,warning);
+ shape();ctx.strokeStyle=known?rgbMix('#9cb3c7',responseColor(secondary),richness):'#738497';ctx.lineWidth=2+warning*2;
+ ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=Math.pow(warning,1.5)*18*paintScale;ctx.stroke();ctx.restore();
+}
+function sideLateral(online,a,side,x){
+ for(let row=0;row<2;row++){
+  const grip=online&&a.fresh?a.grip?.axles?.[row?'rear':'front']:null;
+  const part=grip?.sides?.[side],valid=!!part?.available;
+  wheelLateral(x,row?60:34,part,!!grip?.unloadedSides?.[side],valid,side);
+ }
 }
 function handlingColor(kind,level){
  const palettes={understeer:['#edfaff','#6ce6dd','#e2ef69','#ffb147','#ff653d','#ff2047'],oversteer:['#edfaff','#87cbff','#a89dff','#df77e0','#ff558e','#ff234d'],both:['#edfaff','#aee893','#f0e56b','#ffac48','#ff5e42','#ff1749']};
@@ -250,8 +239,8 @@ function drivingUi(s,online,a){
  const lateral=online&&a.fresh?a.lateral:null;
  layout.group('frontLateral',()=>lateralBar(500,119,480,lateral?.front));
  layout.group('handling',()=>steeringNeedle(s,online,a));
- layout.group('frontResponse',()=>axleReserve(online,a,'front',245));
- layout.group('rearResponse',()=>axleReserve(online,a,'rear',755));
+ layout.group('frontResponse',()=>sideLateral(online,a,0,245));
+ layout.group('rearResponse',()=>sideLateral(online,a,1,755));
  layout.group('rearLateral',()=>lateralBar(500,787,480,lateral?.rear));
  if(!online||!a.fresh)return;
  // Pedal input and its release outline are one inseparable editable control.

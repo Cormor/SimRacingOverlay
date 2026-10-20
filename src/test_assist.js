@@ -32,14 +32,14 @@ s.game.brake=0;assert.equal(step(620).decel,null);
 // Auxiliary status is not an input to continuous pedal response. Current physical force is required.
 model=new Model();s=fixture();s.game.wheels.forEach(w=>{w.fx=-2000;w.fy=100;w.ratio=-.2;});
 view=step(0);const before=JSON.stringify(view.grip);s.game.statuses={absActive:true,tcActive:true};view=step(200);
-assert.equal(view.brake,null,'steady moderate slip alone must not request release');assert.equal(view.grip.easeSteering,false);
+assert(view.brake.mode==='risk-trend'&&view.brake.severity>.5,'current slip is exposed continuously, not a release command');assert.equal(view.grip.easeSteering,false);
 s.game.wheels[0].ratio=-.9;view=step(220);assert(view.brake.severity>.7);
 // The visual state recovers immediately, without a release latch or a historical peak.
-s.game.wheels.forEach(w=>{w.ratio=-.01;w.angle=.001;});view=step(240);assert.equal(view.brake,null);
+s.game.wheels.forEach(w=>{w.ratio=-.01;w.angle=.001;});view=step(240);assert(view.brake.severity<.02);
 s.game.brake=0;assert.equal(step(260).brake,null);
 // A driven rear axle participates; zero gas removes its cue on the very next packet.
 model=new Model();s=fixture();s.game.gas=.7;s.game.brake=0;s.game.wheels.forEach((w,i)=>{w.fx=i>=2?2200:0;w.fy=0;w.ratio=i>=2?.95:0;});
-view=step(0);assert.equal(view.drive.mode,'release-reference');assert(view.drive.severity>.8);s.game.gas=0;assert.equal(step(20).drive,null);
+view=step(0);assert.equal(view.drive.mode,'risk-trend');assert(view.drive.severity>.8);s.game.gas=0;assert.equal(step(20).drive,null);
 // Turning itself is NOT a slip: arbitrary wheel/yaw angles, zero tyre slip -> white neutral.
 s=fixture(25,17);s.game.wheels.forEach(w=>w.angle=0);model=new Model();view=model.update(s,0);near(view.steering.delta,0);assert(view.steering.neutral);assert.equal(view.steering.source,'native-front-contact-slip-angle');
 // Changing native yaw does not contaminate a contact-slip measurement.
