@@ -21,3 +21,7 @@ python -m PyInstaller --clean --onefile --noconsole --name MozaLedObserver --dis
 可运行 `node --test tests/public-portable.test.js` 检查新接入的纯计算逻辑。硬件协议和游戏数据是否可用仍需在目标电脑核对。
 
 遥测变更的针对性检查：运行 `powershell -NoProfile -File tools/test-telemetry.ps1`，再运行 `node src/test_adaptive_telemetry.js`、`node src/test_assist.js` 和 `node src/test_realtime_response.js`。C# 检查产物仅写入被 Git 忽略的 `build/telemetry-tests`。
+
+## GitHub 上生成安装包
+
+在 Actions 中运行 **Package Windows release**，从仓库当前版本生成安装包并上传到对应的草稿 Release。它复用已发布 v1.0.1 的运行组件，先核对原包 SHA-256，再逐文件比较本次原生组件和观察器源码；源码有变化时停止，要求重新构建，不会把旧组件混入新版本。打包仍执行文件清单、隐私扫描及 ZIP 完整性检查，不启动游戏或设备测试。附件上传完成后，核对校验文件再发布草稿。
