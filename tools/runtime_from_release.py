@@ -11,7 +11,8 @@ with zipfile.ZipFile(archive) as z:
     for p in (root/'src').rglob('*'):
         if p.is_file() and p.suffix in ('.cs','.py'):
             name=prefix+'source/'+p.relative_to(root).as_posix()
-            if name not in z.namelist() or z.read(name)!=p.read_bytes():
+            # Git checkout applies .gitattributes CRLF to C#; only normalize line endings.
+            if name not in z.namelist() or z.read(name).replace(b'\r\n',b'\n')!=p.read_bytes().replace(b'\r\n',b'\n'):
                 raise SystemExit('Runtime source changed; rebuild required: '+p.relative_to(root).as_posix())
     allowed={'SimRacingBridge.exe','SimRacingLauncher.exe','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'}
     count=0
