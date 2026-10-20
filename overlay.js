@@ -5,7 +5,7 @@ const image=new Image();image.src='assets/wheel.svg';
 const params=new URLSearchParams(location.search),demo=params.get('demo')==='1',qa=params.get('qa')==='1';
 let paintScale=1;
 let state={connected:false},lastGood=0,angle=0,qaClock=null;
-const uiInfo={version:'1.0.0',ambientKnobs:false,ambientButtons:false,waiting:false};
+const uiInfo={version:'1.0.1',ambientKnobs:false,ambientButtons:false,waiting:false};
 const assistModel=new DrivingAssist.Model({storage:qa||typeof localStorage==='undefined'?null:localStorage});let assistView={fresh:false,unloaded:[false,false,false,false]};
 // Fixed-size counters, no per-frame logging. Recording derives rates from counter deltas.
 const runtimePerf={startedAt:performance.now(),polls:0,errors:0,renders:0,uniquePackets:0,lastPacket:null,algorithm:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)},network:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)}};
