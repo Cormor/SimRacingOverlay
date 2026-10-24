@@ -8,3 +8,19 @@
 - 每个新组合都要检查基础仪表、逐轮纵横向滑移、载荷/卸载、逐轮响应估计、踏板辅助、转向状态、减速度和 G 力球的实际输入。未提供的真实设备/辅助状态不能用设置值冒充触发值。
 - 调整共享算法后，做本次变更的最小测试和必要健壮性验证，并回归已有 ACR 数据路径。模拟通过、运行端读回和屏幕显示分别记录，不相互替代。
 - 保留用户布局和设置；不再生成 PDF。
+
+## 本机运行布局与后续维护
+
+- 本机统一入口：`../Apps/SimRacingOverlay`；当前 源码相对路径开发运行版，1.1.0 + 未提交优化。实际位置及版本变更以 `../Apps/catalog.json` 为准。
+- 开发源码：`../SimRacingOverlay`；本目录与其他工作树均保留已有分支/修改。构建与维护：tools/build.ps1；完整构建与打包见 docs/BUILD.md 和 tools/package.py。
+- 保留源码 runtime 作为唯一开发运行组件，dist 只留最近3版本 ZIP。overlay.js、realtime-response.js 有用户已有修改；不要用正式1.1.0覆盖。Install.ps1 会注册SimHub/OBS和自启动，单纯整理/构建不要调用它。
+- 每次本地构建交付后更新唯一运行入口；历史最多留最近3实际版本压缩包及必要元数据，删除重复解压副本与构建中间产物，保留配置、源码、依赖及诊断/恢复资料。联接不要递归跟随清理，完整说明见 `../Apps/README.md`。
+
+- 前端采用遥测计算、显示状态准备、显示提交三个独立阶段；维护时不要把算法或场景生成放回 `requestAnimationFrame`。`node src/test_render_clocks.js` 核对固定输入在 30/60/144/240 Hz 显示下的模型调用次数及超时/布局行为，详见 `docs/IRACING-PERFORMANCE.md`。
+
+## 编辑器与算法基线
+
+- UI 和交互规范见 `docs/UE-UI.md`；统一样式在 `ui-theme.js` / `ui.css`。布局 v3 的绘制、命中、旋转、选框与脏区须使用同一变换，绘制时不得隐式 fit。
+- `legacy-chassis-response.js` 保留 v15 观察器。自适应版本仅由适配器提供的 `capabilities.kinematicsProfile=adaptive-steering-v1` 选择；不得按游戏字符串启停算法。旗语是用户明确限定的 iRacing SDK 协议功能。
+- 编辑器检查：`node src/test_layout_editor.js`、`node src/test_dashboard_cache.js`、`node src/test_render_clocks.js`；变更遥测后执行 `tools/test-telemetry.ps1`。算法维护先读 `docs/ALGORITHM-BASELINE.md`。
+- 根目录 CSS 是运行必需源码，打包需与 JS 一起收录；保留本树独立的遥测事件流与 worker 处理链路。

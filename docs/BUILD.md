@@ -22,6 +22,10 @@ python -m PyInstaller --clean --onefile --noconsole --name MozaLedObserver --dis
 
 遥测变更的针对性检查：运行 `powershell -NoProfile -File tools/test-telemetry.ps1`，再运行 `node src/test_adaptive_telemetry.js`、`node src/test_assist.js` 和 `node src/test_realtime_response.js`。C# 检查产物仅写入被 Git 忽略的 `build/telemetry-tests`。
 
+渲染与传输变更还需运行 `node src/test_dashboard_cache.js`、`node src/test_paint_opacity.js`、`node src/test_overlay.js`、`node src/test_overlay_stream.js` 和 `node src/test_telemetry_processor.js`。用项目 Electron 执行 `tools/test-renderer.cjs --pixels-only` 核对局部绘制及素材缓存；`--recovery-only` 核对浏览器传输恢复。完成 C# 遥测检查后，`--native-only` 使用无设备的独立测试进程验证原生事件流。基准与证据范围见 `docs/IRACING-PERFORMANCE.md`。
+
 ## GitHub 上生成安装包
 
-在 Actions 中运行 **Package Windows release**，从仓库当前版本生成安装包并上传到对应的草稿 Release。它复用已发布 v1.0.1 的运行组件，先核对原包 SHA-256，再逐文件比较本次原生组件和观察器源码；源码有变化时停止，要求重新构建，不会把旧组件混入新版本。打包仍执行文件清单、隐私扫描及 ZIP 完整性检查，不启动游戏或设备测试。附件上传完成后，核对校验文件再发布草稿。
+在 Actions 中运行 **Package Windows release**，从当前提交构建桥接与启动器，再生成安装包并上传到指定草稿 Release。Electron、SharpDX、未变化的可选观察器及 SimHub 插件从校验过的基础包恢复；这些组件对应的源码须保持一致。修改过的原生 C# 组件在 Windows runner 上重新编译，`native-build.json` 将二进制与实际源码绑定。
+
+打包包含运行时、PNG 轮盘、仪表样式、相对屏幕的布局预设和完整源码。检查针对账号路径、账户标识、密码、密钥与令牌；可分享的样式和配置不会因“个人偏好”被排除。发布前应在干净解压目录运行 `Start.cmd`，确认默认文件自动生成、当前包的桥接启动、图片加载、画面可见和中下方布局。

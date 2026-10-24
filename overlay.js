@@ -1,17 +1,59 @@
 'use strict';
 const canvas=document.getElementById('overlay'),nativeContext=canvas.getContext('2d');
-const ctx=typeof OpacityPaint!=='undefined'?OpacityPaint.wrap(nativeContext,kind=>layout.drawOpacity?.(kind)??1):nativeContext;
-const image=new Image();image.src='assets/wheel.svg';
+let ctx=typeof OpacityPaint!=='undefined'?OpacityPaint.wrap(nativeContext,kind=>layout.drawOpacity?.(kind)??1):nativeContext;
+const image=new Image();image.src='assets/wheel.png';
+let roundWheelBitmap=null;
+function wheelImage(){
+ if(roundWheelBitmap||!image.complete||!image.naturalWidth)return roundWheelBitmap||image;
+ // Keep the leather photograph and hub. Trim its irregular outer contour to an
+ // exact circle after the calibrated X correction; cache once, not per frame.
+ if(typeof document.createElement!=='function')return image;
+ const bitmap=document.createElement('canvas');bitmap.width=image.naturalWidth;bitmap.height=image.naturalHeight;
+ const paint=bitmap.getContext('2d');paint.beginPath();paint.ellipse(655,602.5,562*1158/1139,562,0,0,Math.PI*2);paint.clip();paint.drawImage(image,0,0);
+ roundWheelBitmap=bitmap;return bitmap;
+}
+
+let wheelFaceBitmap=null,wheelFaceKey=null,wheelFaceDensity=0;
+const wheelFaceStats={builds:0,reuses:0};
+function paintWheelFace(key,draw){
+ const t=ctx.getTransform?.();
+ if(!t||typeof document.createElement!=='function'){draw();return;}
+ const density=Math.ceil((Math.max(Math.hypot(t.a,t.b),Math.hypot(t.c,t.d))-1e-6)*4)/4;
+ const w=Math.ceil(1315*density),h=Math.ceil(1197*density);
+ if(!(density>0)||w*h>8*1024*1024){draw();return;}
+ const style=layout.drawOpacity?.('image')+':'+layout.drawOpacity?.('text');
+ key=key+':'+style;
+ if(!wheelFaceBitmap||wheelFaceKey!==key||wheelFaceDensity!==density){
+  if(!wheelFaceBitmap)wheelFaceBitmap=document.createElement('canvas');
+  wheelFaceBitmap.width=w;wheelFaceBitmap.height=h;
+  const native=wheelFaceBitmap.getContext('2d');native.setTransform(w/1315,0,0,h/1197,0,0);
+  const previous=ctx;ctx=typeof OpacityPaint!=='undefined'?OpacityPaint.wrap(native,kind=>layout.drawOpacity?.(kind)??1):native;
+  try{draw();}finally{ctx=previous;}
+  wheelFaceKey=key;wheelFaceDensity=density;wheelFaceStats.builds++;
+ }else wheelFaceStats.reuses++;
+ // Component opacity is already applied while baking its text/image commands.
+ nativeContext.drawImage(wheelFaceBitmap,0,0,1315,1197);
+}
 const params=new URLSearchParams(location.search),demo=params.get('demo')==='1',qa=params.get('qa')==='1';
 let paintScale=1;
 let state={connected:false},lastGood=0,angle=0,qaClock=null;
-const uiInfo={version:'1.1.0',ambientKnobs:false,ambientButtons:false,waiting:false};
+let paintAngle=0,displayLastAt=null,lastPaintSignature=null;
+const visualSteering={from:0,to:0,at:null,duration:0};
+function steeringAt(now){const v=visualSteering;if(v.at===null)return angle;const f=v.duration>0?Math.max(0,Math.min(1,(now-v.at)/v.duration)):1;return v.from+(v.to-v.from)*f;}
+function observeSteering(s,now){
+ const target=s?.connected&&Number.isFinite(s.angle)?s.angle:0,v=visualSteering;
+ const gap=v.at===null?Infinity:now-v.at;
+ v.from=gap>100||gap<0?target:steeringAt(now);v.to=target;v.at=now;v.duration=gap>100||gap<=0?0:Math.min(30,Math.max(4,gap));
+}
+const UI=typeof OverlayTheme!=='undefined'?OverlayTheme:{font:'Consolas,"Microsoft YaHei UI",monospace',colors:{text:'#edf5ff',muted:'#a4b7cc',track:'#1c2938',border:'#73879d',panel:'#111923',accent:'#62d9ff',brake:'#ff5673',throttle:'#65e3ad',warning:'#ffc75a',danger:'#ff365d',estimateFront:'#83d7f2',estimateRear:'#f6bd84'},sizes:{caption:16,label:20,value:32,secondary:24,primary:28,headline:40,wheelKnob:29,wheelButton:23,flagTitle:28,flagHint:18}};
+const uiInfo={version:'ue-editor-v1',ambientKnobs:false,ambientButtons:false,waiting:false};
 const assistModel=new DrivingAssist.Model({storage:qa||typeof localStorage==='undefined'?null:localStorage});let assistView={fresh:false,unloaded:[false,false,false,false]};
+const processor=!qa&&!demo&&typeof TelemetryProcessor!=='undefined'?new TelemetryProcessor.Client((s,now)=>assistModel.update(s,now)):null;
 // Fixed-size counters, no per-frame logging. Recording derives rates from counter deltas.
 const runtimePerf={startedAt:performance.now(),polls:0,errors:0,renders:0,uniquePackets:0,lastPacket:null,algorithm:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)},network:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)}};
 const costBounds=[.1,.25,.5,1,2,4,8,16,32,64,Infinity];
 function observeCost(kind,ms){const c=runtimePerf[kind];c.count++;c.totalMs+=ms;c.maxMs=Math.max(c.maxMs,ms);c.buckets[costBounds.findIndex(b=>ms<=b)]++;}
-function getPerformance(){const elapsedMs=performance.now()-runtimePerf.startedAt;const cost=c=>({count:c.count,totalMs:c.totalMs,maxMs:c.maxMs,buckets:c.buckets.slice()});return {elapsedMs,polls:runtimePerf.polls,errors:runtimePerf.errors,renders:runtimePerf.renders,uniquePackets:runtimePerf.uniquePackets,algorithm:cost(runtimePerf.algorithm),network:cost(runtimePerf.network),bucketUpperMs:costBounds.map(b=>Number.isFinite(b)?b:null)};}
+function getPerformance(){const elapsedMs=performance.now()-runtimePerf.startedAt;const cost=c=>({count:c.count,totalMs:c.totalMs,maxMs:c.maxMs,buckets:c.buckets.slice()});return {elapsedMs,polls:runtimePerf.polls,errors:runtimePerf.errors,renders:runtimePerf.renders,displayFrames:runtimePerf.displayFrames||0,displayElapsed:runtimePerf.displayElapsed||0,slowDisplayFrames:runtimePerf.slowDisplayFrames||0,prepares:runtimePerf.prepares||0,uniquePackets:runtimePerf.uniquePackets,processingMode:runtimePerf.processingMode||'main',transport:streaming?'events':'http',streamFrames:runtimePerf.streamFrames||0,coalescedFrames:runtimePerf.coalescedFrames||0,algorithm:cost(runtimePerf.algorithm),network:cost(runtimePerf.network),bucketUpperMs:costBounds.map(b=>Number.isFinite(b)?b:null)};}
 const gBallModel=typeof GBall!=='undefined'?new GBall.Model(qa?null:window.sessionStorage):null;let gBallView=null;
 const layout=typeof OverlayLayout!=='undefined'?OverlayLayout:{begin(){},group(id,draw){draw();},flush(){}};
 if(params.has('stage')&&typeof OverlayLayout!=='undefined'){try{OverlayLayout.setDesktopStage(JSON.parse(params.get('stage')));}catch{}}
@@ -29,14 +71,21 @@ const controls=[
  {x:247,y:748,r:24,b:[15],axis:'leftPaddle'},{x:1066,y:748,r:24,b:[16],axis:'rightPaddle'},
  {x:306,y:361,r:13,b:[17,23]},{x:1006,y:361,r:13,b:[18,36]}
 ];
-const encoders=[];
-controls.forEach((c,i)=>{c.b=[i+1];c.led=i;c.axis=undefined;});
+const encoders=[{x:359,y:766,b:[26,27],first:53,led:8},{x:476,y:878,b:[39,40],first:89,led:9},{x:837,y:878,b:[30,31],first:77,led:10},{x:954,y:766,b:[28,29],first:65,led:11}];
 const ledShapes=[{"led": 0, "points": [[481, 338], [482, 337], [492, 331], [496, 329], [498, 331], [498, 348], [497, 349], [495, 349], [492, 347], [482, 340], [481, 339]]}, {"led": 1, "points": [[475, 344], [476, 343], [477, 343], [492, 354], [496, 357], [496, 358], [495, 359], [476, 359], [475, 358]]}, {"led": 2, "points": [[481, 366], [483, 365], [496, 365], [498, 367], [498, 384], [496, 386], [491, 381], [481, 368]]}, {"led": 3, "points": [[533, 319], [535, 317], [542, 316], [552, 315], [554, 315], [555, 316], [555, 318], [551, 326], [549, 328], [541, 328], [536, 323]]}, {"led": 4, "points": [[559, 324], [563, 316], [565, 314], [575, 314], [577, 316], [581, 322], [581, 324], [580, 325], [576, 326], [564, 327], [560, 327], [559, 326]]}, {"led": 5, "points": [[583, 314], [584, 313], [593, 312], [604, 312], [605, 313], [600, 323], [599, 324], [592, 325], [591, 325], [588, 322], [585, 318], [583, 315]]}, {"led": 6, "points": [[608, 322], [609, 320], [613, 313], [614, 312], [623, 311], [626, 314], [630, 320], [630, 323], [609, 323]]}, {"led": 7, "points": [[633, 312], [634, 311], [652, 311], [653, 312], [653, 313], [652, 322], [651, 323], [650, 323], [640, 322], [637, 319], [634, 315], [633, 313]]}, {"led": 8, "points": [[660, 311], [679, 311], [680, 312], [680, 313], [676, 319], [672, 323], [662, 323], [660, 322]]}, {"led": 9, "points": [[682, 322], [683, 320], [687, 314], [690, 311], [695, 311], [699, 312], [700, 313], [703, 318], [705, 322], [705, 323], [703, 324], [683, 323]]}, {"led": 10, "points": [[708, 313], [709, 312], [720, 312], [729, 313], [729, 316], [724, 323], [723, 324], [714, 324], [713, 323], [708, 314]]}, {"led": 11, "points": [[732, 323], [733, 321], [737, 315], [738, 314], [744, 314], [749, 315], [750, 316], [754, 324], [754, 326], [753, 327], [750, 327], [738, 326], [732, 325]]}, {"led": 12, "points": [[757, 317], [758, 316], [766, 316], [777, 317], [779, 319], [778, 321], [774, 326], [772, 328], [764, 328], [762, 327]]}, {"led": 13, "points": [[815, 330], [816, 329], [817, 329], [819, 330], [826, 334], [831, 337], [832, 338], [829, 341], [819, 348], [817, 349], [815, 349]]}, {"led": 14, "points": [[817, 357], [819, 355], [834, 344], [836, 343], [837, 343], [838, 344], [838, 358], [837, 359], [819, 359], [817, 358]]}, {"led": 15, "points": [[815, 366], [816, 365], [820, 365], [831, 366], [831, 368], [830, 370], [827, 374], [820, 383], [817, 386], [816, 386], [815, 385]]}];
-function text(s,x,y,size=28,color='#fff'){ctx.font=`700 ${size}px Consolas,"Cascadia Mono","Microsoft YaHei UI",monospace`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=Math.max(5,size*.15);ctx.strokeStyle='#090b10';ctx.strokeText(s,x,y);ctx.fillStyle=color;ctx.fillText(s,x,y);}
+function text(s,x,y,size=UI.sizes.primary,color=UI.colors.text){ctx.font=`600 ${size}px ${UI.font}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=Math.max(2,size*.09);ctx.strokeStyle=UI.colors.panel;ctx.strokeText(s,x,y);ctx.fillStyle=color;ctx.fillText(s,x,y);}
 function circle(x,y,r,fill,stroke='#151820',width=5){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=width;ctx.strokeStyle=stroke;ctx.stroke();}
 function emittedColor(v){return typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)&&v.toLowerCase()!=='#000000'?v:null;}
 // Dusty rose -> apricot -> sage -> teal -> blue -> lilac: no saturated RGB bands.
-const ambientPalette=['#e5a0b0','#e6b184','#e0cd83','#aed498','#8bd3bc','#91bfe6','#b4aae6','#d5a4df'];
+const ambientPalette=UI.palettes?.ambient||['#e5a0b0','#e6b184','#e0cd83','#aed498','#8bd3bc','#91bfe6','#b4aae6','#d5a4df'];
+function shiftLightColors(game,now){
+ if(!game?.available)return null;
+ const shift=game.shiftLights,rpm=game.rpm,start=shift?.firstRpm,end=shift?.lastRpm;
+ const fraction=Number.isFinite(shift?.indicator)?Math.max(0,Math.min(1,shift.indicator)):Number.isFinite(start)&&Number.isFinite(end)&&end>start&&Number.isFinite(rpm)?Math.max(0,Math.min(1,(rpm-start)/(end-start))):null;
+ if(fraction===null)return null;
+ const blink=Number.isFinite(shift?.blinkRpm)&&Number.isFinite(rpm)&&rpm>=shift.blinkRpm;
+ return {source:Number.isFinite(shift?.indicator)?'game-shift-indicator':'game-shift-thresholds',colors:ledShapes.map((_,i)=>i<Math.ceil(fraction*ledShapes.length)?(blink?(Math.floor(now/100)%2?'#ff314d':'#28050b'):i>=13?'#d39ce0':i>=9?'#ebc777':'#8dcdb8'):'#11171e')};
+}
 function buttonLightsAvailable(led){return led?.available===true&&Array.isArray(led.buttons)&&led.buttons.some(v=>typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v));}
 function ambientButtonColor(c,now,alert=false){
  const phase=((now/6500+(c.x-200)/1200+(c.y-300)/1500)%1+1)%1*ambientPalette.length;
@@ -59,7 +108,7 @@ function waitingBadge(waiting){
  if(!waiting)return;
  ctx.save();ctx.fillStyle='#14202ee8';ctx.strokeStyle='#91a2b6';ctx.lineWidth=1.5;
  ctx.beginPath();ctx.roundRect(446,268,108,30,9);ctx.fill();ctx.stroke();ctx.restore();
- text('待数据',500,283,23,'#d9e4ef');
+ text('待数据',500,283,UI.sizes.secondary,'#d9e4ef');
 }
 function buttonCap(c,color,ambient=false){
  const glow=emittedColor(color),base=ctx.createRadialGradient(c.x-8,c.y-10,2,c.x,c.y,c.r);base.addColorStop(0,'#38434f');base.addColorStop(1,'#121922');
@@ -67,19 +116,21 @@ function buttonCap(c,color,ambient=false){
  if(glow){ctx.save();ctx.shadowColor=glow;ctx.shadowBlur=(ambient?16:8)*paintScale;circle(c.x,c.y,c.r-3,glow,'#ffffff44',1.5);ctx.restore();}
  else{ctx.beginPath();ctx.arc(c.x,c.y,c.r-4,Math.PI*1.12,Math.PI*1.82);ctx.strokeStyle='#6d798777';ctx.lineWidth=2;ctx.stroke();}
 }
-function bar(x,value,color,label,online){const y=230,h=440,w=38;ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle='#07090d';ctx.fillStyle='#20252de0';ctx.beginPath();ctx.roundRect(x-w/2,y,w,h,12);ctx.fill();ctx.stroke();if(online){ctx.save();ctx.beginPath();ctx.roundRect(x-w/2+5,y+5,w-10,h-10,8);ctx.clip();ctx.fillStyle=color;const fill=(h-10)*Math.max(0,Math.min(100,value))/100;if(fill>0){ctx.beginPath();ctx.roundRect(x-w/2+5,y+h-5-fill,w-10,fill,Math.min(8,fill/2));ctx.fill();}ctx.restore();}text(label,x,y-43,32);text(online?`${Math.round(value).toString().padStart(3,' ')}%`:'—',x,y+h+40,34);}
-function statuses(s,online){
+function bar(x,value,color,label,online){online=online&&Number.isFinite(value);const y=230,h=440,w=38;ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle='#07090d';ctx.fillStyle='#20252de0';ctx.beginPath();ctx.roundRect(x-w/2,y,w,h,12);ctx.fill();ctx.stroke();if(online){ctx.save();ctx.beginPath();ctx.roundRect(x-w/2+5,y+5,w-10,h-10,8);ctx.clip();ctx.fillStyle=color;const fill=(h-10)*Math.max(0,Math.min(100,value))/100;if(fill>0){ctx.beginPath();ctx.roundRect(x-w/2+5,y+h-5-fill,w-10,fill,Math.min(8,fill/2));ctx.fill();}ctx.restore();}text(label,x,y-43,UI.sizes.value||32);text(online?`${Math.round(value).toString().padStart(3,' ')}%`:'—',x,y+h+40,UI.sizes.value);}
+function statuses(s,online,advance=true){
  const st={...(s.game?.statuses||{})},now=performance.now();
- for(const key of ['absActive','tcActive','escActive']){if(online&&st[key]===true)latch[key]=now+220;if(online&&now<(latch[key]||0))st[key]=true;}
- const active=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true?['ABS','TC','ESC'].filter(label=>st[label.toLowerCase()+'Active']===true):[];
+ for(const key of ['absActive','tcActive','escActive']){if(advance&&online&&st[key]===true)latch[key]=now+220;if(online&&now<(latch[key]||0))st[key]=true;}
+ const active=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true?[
+  ['ABS',st.absActive],['TC',st.tcActive===true],['ESC',st.escActive],['水温',st.waterTempWarning],['油压',st.oilPressureWarning],['油路',st.fuelPressureWarning],['熄火',st.engineStalled],['限速',st.pitLimiterActive],['离轨',st.trackSurface===0]
+ ].filter(x=>x[1]===true).slice(0,3).map(x=>x[0]):[];
  for(let i=0;i<active.length;i++){const label=active[i],x=500+(i-(active.length-1)/2)*156,y=826,color='#ffda56';ctx.fillStyle='#473c13f0';ctx.strokeStyle=color;ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(x-73,y-21,146,42,11);ctx.fill();ctx.stroke();
   ctx.save();ctx.translate(x-45,y);ctx.strokeStyle=color;ctx.lineWidth=2.5;
   if(label==='ABS'){ctx.beginPath();ctx.arc(0,0,11,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(0,0,17,-1.1,1.1);ctx.stroke();ctx.beginPath();ctx.arc(0,0,17,Math.PI-1.1,Math.PI+1.1);ctx.stroke();text('!',0,0,18,color);}
-  else{ctx.strokeRect(-10,-11,20,15);ctx.beginPath();ctx.moveTo(-6,5);ctx.bezierCurveTo(-18,8,-1,11,-14,15);ctx.moveTo(9,5);ctx.bezierCurveTo(-4,8,14,11,2,15);ctx.stroke();}ctx.restore();text(label,x+18,y,31,color);
+  else{ctx.strokeRect(-10,-11,20,15);ctx.beginPath();ctx.moveTo(-6,5);ctx.bezierCurveTo(-18,8,-1,11,-14,15);ctx.moveTo(9,5);ctx.bezierCurveTo(-4,8,14,11,2,15);ctx.stroke();}ctx.restore();text(label,x+18,y,UI.sizes.secondary,color);
  }
 }
 // Percentage is always raw slip ratio × 100. Colour is a visual scale, not an optimum-grip target.
-const slipPalettes={
+const slipPalettes=UI.palettes?.slip||{
  drive:[[0,'#6ef4df'],[.10,'#65f3b2'],[.25,'#c9f45b'],[.50,'#ffe15b'],[.75,'#ffac45'],[1,'#ff6ac7'],[1.5,'#dc74ff'],[2.5,'#aa87ff'],[4,'#7bb8ff']],
  brake:[[0,'#6ef4df'],[.10,'#66d9ff'],[.25,'#8fafff'],[.50,'#c48aff'],[.75,'#e575ec'],[1,'#ff70bb'],[1.5,'#d276ff'],[2.5,'#9b8cff'],[4,'#73c1ff']]
 };
@@ -106,16 +157,21 @@ function lockSurround(bx,tx,zero){
  ctx.strokeStyle=LOCK_RED;ctx.lineWidth=4;ctx.lineCap='round';ctx.shadowColor=LOCK_RED;ctx.shadowBlur=(18)*paintScale;
  ctx.beginPath();for(const x of [left,right])for(const y of [top,bottom]){const dx=x===left?1:-1,dy=y===top?1:-1;ctx.moveTo(x,y+dy*19);ctx.lineTo(x,y);ctx.lineTo(x+dx*17,y);}ctx.stroke();
 }
-function wheelSlip(s,online,a=assistView,only=null){
+function advanceWheelLock(s,online,a,i,now){
+ const w=s.game?.wheels?.[i],nativeRatio=Number.isFinite(w?.ratio),valid=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true&&nativeRatio;
+ const airborne=a.fresh&&a.unloaded?.[i];
+ if(airborne){lockState[i].since=0;lockState[i].until=0;}
+ const stoppedRolling=Number.isFinite(w?.omega)?Math.abs(w.omega)<2.5:Number.isFinite(w?.speedMs)&&Math.abs(w.speedMs)<.75;
+ const candidate=valid&&!airborne&&Math.abs(s.game.speedKmh)>=10&&s.game.brake>.15&&w.ratio<=-.8&&stoppedRolling;
+ if(candidate){if(!lockState[i].since)lockState[i].since=now;if(now-lockState[i].since>=80)lockState[i].until=now+300;}else lockState[i].since=0;
+}
+function wheelSlip(s,online,a=assistView,only=null,advance=true){
  const wheels=s.game?.wheels||[],now=performance.now();
  for(let i=0;i<4;i++){
   if(only!==null&&i!==only)continue;
   const w=wheels[i],nativeRatio=Number.isFinite(w?.ratio),reported=nativeRatio?w.ratio:w?.slipFeedback,valid=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true&&Number.isFinite(reported),ratio=valid?reported:0,zero=i<2?295:645;
   const airborne=a.fresh&&a.unloaded[i];
-  if(airborne){lockState[i].since=0;lockState[i].until=0;}
-  const stoppedRolling=Number.isFinite(w?.omega)?Math.abs(w.omega)<2.5:Number.isFinite(w?.speedMs)&&Math.abs(w.speedMs)<.75;
-  const candidate=valid&&nativeRatio&&!airborne&&Math.abs(s.game.speedKmh)>=10&&s.game.brake>.15&&ratio<=-.8&&stoppedRolling;
-  if(candidate){if(!lockState[i].since)lockState[i].since=now;if(now-lockState[i].since>=80)lockState[i].until=now+300;}else lockState[i].since=0;
+  if(advance)advanceWheelLock(s,online,a,i,now);
   const isLocked=valid&&now<(lockState[i].until||0),magnitude=Math.abs(ratio),braking=ratio<0;
   const color=isLocked?LOCK_RED:!valid?'#8591a4':slipColor(magnitude,braking);
   const bx=i%2?842:158,tx=i%2?758:242,extent=105,width=24,fill=slipLength(magnitude);
@@ -139,29 +195,32 @@ function wheelSlip(s,online,a=assistView,only=null){
   }
   ctx.shadowBlur=(isLocked?15:0)*paintScale;ctx.beginPath();ctx.moveTo(bx-15,zero);ctx.lineTo(bx+15,zero);ctx.strokeStyle=isLocked?LOCK_RED:'#aabace';ctx.lineWidth=isLocked?5:3;ctx.stroke();
   if(isLocked){ctx.shadowColor=LOCK_RED;ctx.shadowBlur=(18)*paintScale;}
-  if(valid&&nativeRatio&&(magnitude>=.005||isLocked))text((braking?'-':'+')+Math.min(999,magnitude*100).toFixed(0)+'%',tx,zero-5,38,isLocked?'#fff1f2':color);
+  if(valid&&nativeRatio&&(magnitude>=.005||isLocked))text((braking?'-':'+')+Math.min(999,magnitude*100).toFixed(0)+'%',tx,zero-5,UI.sizes.value,isLocked?'#fff1f2':color);
   ctx.restore();
  }
 }
-function lateralBar(x,y,width,value){
- const valid=Number.isFinite(value),half=width/2,range=20,color=valid?slipColor(Math.abs(value)/range,false):'#a2b0be';
+function lateralBar(x,y,width,value,range=20,label='',barColor=null,angle=false){
+ const valid=Number.isFinite(value),half=width/2,color=barColor||(valid?slipColor(Math.abs(value)/range,false):'#a2b0be');
  ctx.save();
  // Match the four longitudinal rails: no white backing, only a quiet track and an active coloured extent.
- ctx.strokeStyle='#718399';ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x-half,y);ctx.lineTo(x+half,y);ctx.stroke();
+ ctx.strokeStyle=UI.colors.border;ctx.lineWidth=3;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x-half,y);ctx.lineTo(x+half,y);ctx.stroke();
  if(valid){
   const distance=Math.min(1,Math.abs(value)/range)*half,sign=Math.sign(value),end=x+sign*distance;
   if(distance>.5){ctx.fillStyle=color;ctx.shadowColor=color;ctx.shadowBlur=(8)*paintScale;ctx.beginPath();ctx.roundRect(value<0?end:x,y-10,distance,20,Math.min(9,distance/2));ctx.fill();ctx.shadowBlur=(0)*paintScale;}
-  if(Math.abs(value)>=12){ctx.strokeStyle=color;ctx.lineWidth=3;ctx.shadowColor=color;ctx.shadowBlur=(17)*paintScale;ctx.beginPath();ctx.roundRect(value<0?x-half:x,y-12,half,24,10);ctx.stroke();ctx.shadowBlur=(0)*paintScale;}
+  if(Math.abs(value)>=range*.8){ctx.strokeStyle=color;ctx.lineWidth=3;ctx.shadowColor=color;ctx.shadowBlur=(17)*paintScale;ctx.beginPath();ctx.roundRect(value<0?x-half:x,y-12,half,24,10);ctx.stroke();ctx.shadowBlur=(0)*paintScale;}
   // The filled width is the primary magnitude cue; a small end cap merely marks its measured endpoint.
   ctx.fillStyle=color;ctx.strokeStyle='#07111d';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(end-4,y-13,8,26,3);ctx.fill();ctx.stroke();
  }else{ctx.setLineDash([3,3]);ctx.strokeStyle='#738399';ctx.lineWidth=2;ctx.beginPath();ctx.roundRect(x-4,y-13,8,26,3);ctx.stroke();ctx.setLineDash([]);}
  // Centre survives coloured fills: dark separator with a short white head above/below the rail.
- ctx.strokeStyle='#132334';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y-9);ctx.lineTo(x,y+9);ctx.stroke();ctx.strokeStyle='#f7fbff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y-15);ctx.lineTo(x,y-11);ctx.moveTo(x,y+11);ctx.lineTo(x,y+15);ctx.stroke();ctx.restore();
+ ctx.strokeStyle='#132334';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y-9);ctx.lineTo(x,y+9);ctx.stroke();ctx.strokeStyle='#f7fbff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x,y-15);ctx.lineTo(x,y-11);ctx.moveTo(x,y+11);ctx.lineTo(x,y+15);ctx.stroke();
+ if(label)text(label,x-half-16,y,16,'#c7d6e3');
+ if(valid&&angle)text((value>0?'+':'')+value.toFixed(1)+'°',x+half+26,y,16,color);else if(!valid)text('—',x+half+24,y,16,'#8fa3b6');
+ ctx.restore();
 }
 function rgbMix(a,b,t){const hex=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16));const x=hex(a),y=hex(b);return '#'+x.map((v,i)=>Math.round(v+(y[i]-v)*t).toString(16).padStart(2,'0')).join('');}
 // Whole rail hue reflects the current state; trend chevrons never command pedal movement.
 function responseColor(value){
- const stops=[[0,'#ff183c'],[.15,'#ff623f'],[.4,'#ffc34e'],[.7,'#beed65'],[1,'#66f0c3']],v=Math.max(0,Math.min(1,value));
+ const stops=UI.palettes?.response||[[0,'#ff183c'],[.15,'#ff623f'],[.4,'#ffc34e'],[.7,'#beed65'],[1,'#66f0c3']],v=Math.max(0,Math.min(1,value));
  for(let i=1;i<stops.length;i++)if(v<=stops[i][0])return rgbMix(stops[i-1][1],stops[i][1],(v-stops[i-1][0])/(stops[i][0]-stops[i-1][0]));
  return stops.at(-1)[1];
 }
@@ -177,11 +236,11 @@ function pedalAssist(x,cue){
 // Two long lateral rails on each side: FRONT above REAR, both fill toward the wheel centre.
 // Longitudinal information lives only at the actual throttle/brake borders.
 function wheelLateral(cx,cy,part,unloaded,valid,side){
- const d=part?.directions?.lateral,known=valid&&d?.available;
+ const d=part?.directions?.lateral,known=valid&&d?.available&&Number.isFinite(d.current);
  const value=known?Math.max(0,Math.min(1,d.current)):0;
  const width=190,height=18,left=cx-width/2,warning=known?d.danger||0:0;
  const shape=()=>{ctx.beginPath();ctx.roundRect(left,cy-height/2,width,height,6);};
- ctx.save();ctx.lineJoin='round';ctx.shadowBlur=0;shape();ctx.fillStyle='#142333';ctx.fill();
+ ctx.save();ctx.lineJoin='round';ctx.shadowBlur=0;shape();ctx.fillStyle=UI.colors.track;ctx.fill();
  if(unloaded){ctx.strokeStyle='#f5fcff';ctx.lineWidth=3;ctx.shadowColor='#e8f7ff';ctx.shadowBlur=14*paintScale;ctx.stroke();ctx.restore();return;}
  if(known){
   ctx.save();shape();ctx.clip();ctx.fillStyle=responseColor(value);
@@ -192,6 +251,20 @@ function wheelLateral(cx,cy,part,unloaded,valid,side){
  shape();ctx.strokeStyle=known?rgbMix('#9cb3c7',responseColor(secondary),richness):'#738497';ctx.lineWidth=2+warning*2;
  ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=Math.pow(warning,1.5)*18*paintScale;ctx.stroke();ctx.restore();
 }
+function flagBanner(g){
+ if(typeof Flags==='undefined')return;
+ const f=Flags.forGame(g,!uiInfo.waiting);if(!f)return;
+ ctx.save();
+ ctx.translate(0,-89);
+ ctx.fillStyle=UI.colors.panel+'f2';ctx.strokeStyle=f.color;ctx.lineWidth=3;
+ ctx.beginPath();ctx.roundRect(370,0,260,64,12);ctx.fill();ctx.stroke();
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.font=`700 ${UI.sizes.flagTitle}px ${UI.font}`;
+ ctx.fillStyle=f.color;ctx.fillText(f.name,500,19);
+ ctx.font=`600 ${UI.sizes.flagHint}px ${UI.font}`;
+ ctx.fillStyle=UI.colors.text;ctx.fillText(f.short,500,46);
+ ctx.restore();
+}
 function sideLateral(online,a,side,x){
  for(let row=0;row<2;row++){
   const grip=online&&a.fresh?a.grip?.axles?.[row?'rear':'front']:null;
@@ -200,7 +273,7 @@ function sideLateral(online,a,side,x){
  }
 }
 function handlingColor(kind,level){
- const palettes={understeer:['#edfaff','#6ce6dd','#e2ef69','#ffb147','#ff653d','#ff2047'],oversteer:['#edfaff','#87cbff','#a89dff','#df77e0','#ff558e','#ff234d'],both:['#edfaff','#aee893','#f0e56b','#ffac48','#ff5e42','#ff1749']};
+ const palettes=UI.palettes?.handling||{understeer:['#edfaff','#6ce6dd','#e2ef69','#ffb147','#ff653d','#ff2047'],oversteer:['#edfaff','#87cbff','#a89dff','#df77e0','#ff558e','#ff234d'],both:['#edfaff','#aee893','#f0e56b','#ffac48','#ff5e42','#ff1749']};
  const stops=[0,.2,.45,.7,.9,1],colors=palettes[kind]||palettes.understeer,v=Math.sqrt(Math.max(0,Math.min(1,level)));
  for(let i=1;i<stops.length;i++)if(v<=stops[i])return rgbMix(colors[i-1],colors[i],(v-stops[i-1])/(stops[i]-stops[i-1]));return colors.at(-1);
 }
@@ -208,12 +281,12 @@ function steeringNeedle(s,online,a){
  const grip=online&&a.fresh?a.grip:null;
  if(!grip?.available||a.steering?.mode==='static'||a.steering?.mode==='low_speed'||a.steering?.mode==='reverse')return;
  const handling=a.handling,level=Math.max(0,Math.min(1,handling?.severity||0)),kind=handling?.state;
- if(!['understeer','oversteer','both'].includes(kind))return;
- const label=kind==='understeer'?'推头':kind==='oversteer'?'甩尾':'四轮侧滑';
+ if(!['understeer','oversteer','both','sway'].includes(kind))return;
+ const label=kind==='sway'?'侧摆':kind==='understeer'?'推头':kind==='oversteer'?'甩尾':'四轮侧滑';
  const color=handlingColor(kind,level),width=kind==='both'?206:140;
- ctx.save();ctx.fillStyle='#0d1623e6';ctx.strokeStyle=color;ctx.lineWidth=2+level*2;ctx.shadowColor=color;ctx.shadowBlur=(5+level*13)*paintScale;
+ ctx.save();ctx.fillStyle=UI.colors.panel+'e6';ctx.strokeStyle=color;ctx.lineWidth=2+level*2;ctx.shadowColor=color;ctx.shadowBlur=(5+level*13)*paintScale;
  ctx.beginPath();ctx.roundRect(500-width/2,39,width,65,15);ctx.fill();ctx.stroke();
- text(label,500,72,kind==='both'?38:48,color);ctx.restore();
+ text(label,500,72,UI.sizes.headline||40,color);ctx.restore();
 }
 // Presentation only: raw diagnostic/recorded values are never filtered or fed back into estimation.
 let presentation=null,presentationAt=null;
@@ -235,17 +308,20 @@ function presentationView(a,now){
  presentation={...a,grip:{...g,axles,needle},drive:cue('drive'),brake:cue('brake')};return presentation;
 }
 function drivingUi(s,online,a){
- a=presentationView(a,performance.now());
- const lateral=online&&a.fresh?a.lateral:null;
- layout.group('frontLateral',()=>lateralBar(500,119,480,lateral?.front));
+ const nativeF=online&&a.fresh?a.lateral?.front:null;
+ const nativeR=online&&a.fresh?a.lateral?.rear:null;
+ const slipF=online&&a.fresh?a.grip?.vehicleResponse?.slipAngleFront:null;
+ const slipR=online&&a.fresh?a.grip?.vehicleResponse?.slipAngleRear:null;
+ const useF=Number.isFinite(nativeF),useR=Number.isFinite(nativeR);
+ layout.group('frontLateral',()=>lateralBar(500,119,480,useF?nativeF:slipF,useF?20:15,useF?'':'F',useF?null:UI.colors.estimateFront,!useF));
  layout.group('handling',()=>steeringNeedle(s,online,a));
  layout.group('frontResponse',()=>sideLateral(online,a,0,245));
  layout.group('rearResponse',()=>sideLateral(online,a,1,755));
- layout.group('rearLateral',()=>lateralBar(500,787,480,lateral?.rear));
+ layout.group('rearLateral',()=>lateralBar(500,787,480,useR?nativeR:slipR,useR?20:15,useR?'':'R',useR?null:UI.colors.estimateRear,!useR));
  if(!online||!a.fresh)return;
  // Pedal input and its release outline are one inseparable editable control.
  layout.group('decel',()=>{if(Number.isFinite(a.decel)){
-  const value=Math.abs(a.decel)<.005?0:a.decel;text('实际减速',500,658,18,'#c1ccd9');text((value<0?'−':'')+Math.abs(value).toFixed(2)+' g',500,691,35,'#f5f9ff');
+  const value=Math.abs(a.decel)<.005?0:a.decel;text('实际减速',500,658,UI.sizes.label,'#c1ccd9');text((value<0?'−':'')+Math.abs(value).toFixed(2)+' g',500,691,UI.sizes.value,'#f5f9ff');
  }});
 }
 function drawGBall(v){
@@ -266,7 +342,7 @@ function drawGBall(v){
  const peakPoint=(v?.peakOutline||v?.peakHull||[]).reduce((a,p)=>!a||Math.hypot(p.x,p.y)>Math.hypot(a.x,a.y)?p:a,null);
  if(peakPoint&&Math.hypot(peakPoint.x,peakPoint.y)>.005){const a=Math.atan2(peakPoint.y,peakPoint.x);ctx.strokeStyle='#b3eef3';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(x,y,r-1,a-.07,a+.07);ctx.stroke();}
  text(scale.toFixed(1)+'g',x+r+6,y-4,16,'#d8e7f5');
- text(c?c.magnitude.toFixed(2)+'g':'—g',x,y+27,21,c?'#f3ffff':'#9aaebe');ctx.restore();
+ text(c?c.magnitude.toFixed(2)+'g':'—g',x,y+27,UI.sizes.label,c?'#f3ffff':'#9aaebe');ctx.restore();
 }
 function centreStripe(){
  // Physical yellow leather centre band, not an emissive LED.
@@ -275,36 +351,70 @@ function centreStripe(){
  ctx.globalCompositeOperation='source-atop';ctx.fillStyle=yellow;ctx.fillRect(638,29,39,119);
  ctx.globalCompositeOperation='luminosity';ctx.globalAlpha=.18;ctx.drawImage(image,0,0);ctx.restore();
 }
-function render(now){runtimePerf.renders++;
+const componentPaint=(!qa||params.get('retained')==='1')&&typeof ComponentPaint!=='undefined'?new ComponentPaint.Components():null;
+function componentKey(id,s,online,p,now){
+ const g=s.game,a=assistView;
+ if(id==='wheel')return [online,angle,image.complete,s.buttons,s.knobPositions,s.inputProfile,s.leds,g?.shiftLights,s.handbrake,s.paddleMode,s.leftPaddle,s.rightPaddle,g?.available,g?.gear,g?.rpm,g?.maxRpm,g?.rpmPercent,g?.speedKmh,a.grip?.steeringState,g?.wheels?.map(w=>w.ratio),uiInfo.waiting,buttonLightsAvailable(s.leds)&&!uiInfo.ambientKnobs?(g?.shiftLights?.blinkRpm>0&&g.rpm>=g.shiftLights.blinkRpm?Math.floor(now/100):0):Math.floor(now/33)];
+ if(id==='brake'||id==='throttle')return [online,p.fresh,id==='brake'?[s.brake,p.brake]:[s.throttle,p.drive]];
+ if(id.startsWith('slip')&&!id.startsWith('slipAngle')){const i=Number(id.slice(4)),w=g?.wheels?.[i];return [online,g?.available,g?.paused,g?.inMenu,g?.speedKmh,g?.brake,w,a.fresh,a.unloaded?.[i],w?.ratio<-.65||(lockState[i].until||0)>now?Math.floor(now/20):0];}
+ if(id==='frontResponse'||id==='rearResponse')return [online,a.fresh,a.grip?.axles];
+ if(id==='frontLateral'||id==='rearLateral')return [online,a.fresh,a.lateral,a.grip?.vehicleResponse?.slipAngleFront,a.grip?.vehicleResponse?.slipAngleRear];
+ if(id==='handling')return [online,a.fresh,a.steering?.mode,a.handling];
+ if(id==='decel')return [online,a.fresh,a.decel];
+ if(id==='handbrake')return [online,s.handbrake];
+ if(id==='statuses')return [online,g?.available,g?.paused,g?.inMenu,g?.statuses,['absActive','tcActive','escActive'].map(k=>g?.statuses?.[k]===true||performance.now()<(latch[k]||0))];
+ if(id==='gBall')return gBallView;
+ if(id==='flags')return [online,uiInfo.waiting,g?.available,g?.source,g?.paused,g?.inMenu,g?.statuses?.sessionFlags];
+ return now;
+}
+function prepareScene(now){
+ runtimePerf.prepares=(runtimePerf.prepares||0)+1;
  const stage=layout.stage?.()||{width:1000,height:850,originX:0,originY:0,scale:1};
  const raster=layout.raster?.(stage,window.devicePixelRatio||1,window.innerWidth,window.innerHeight,params.has('stage'))||{width:stage.width,height:stage.height,ratio:1};
  paintScale=stage.scale*raster.ratio;uiInfo.raster=raster;
- if(canvas.width!==raster.width||canvas.height!==raster.height){canvas.width=raster.width;canvas.height=raster.height;}
- ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.setTransform(stage.scale*raster.width/stage.width,0,0,stage.scale*raster.height/stage.height,stage.originX*raster.width/stage.width,stage.originY*raster.height/stage.height);let s=state;const live=s.connected&&(qa||Date.now()-lastGood<1000);if(demo){s={connected:true,angle:35*Math.sin(now/1800),brake:Math.max(0,Math.sin(now/1300))*100,throttle:Math.max(0,Math.cos(now/1700))*100,buttons:[17,26,54],leds:{buttons:['#56f7fc','#ff3165','#56f7fc','#56f7fc','#56f7fc','#56f7fc','#56f7fc','#56f7fc'],knobs:['#ff3366','#2ee973','#315aff','#ff651c'],rpm:Array.from({length:16},(_,i)=>i<11?'#45f7c0':'#111')},ledSource:'demo'};}
- const online=demo||live;angle=online?s.angle:0;assistView=assistModel.update(online?s:{connected:false},qa&&Number.isFinite(qaClock)?qaClock:performance.now());
+
+ let s=state;const live=s.connected&&(qa||Date.now()-lastGood<1000);
+ const online=demo||live;angle=online?s.angle:0;
+ if(!online){visualSteering.from=0;visualSteering.to=0;visualSteering.duration=0;}
+ if(!online||performance.now()-assistView.processedAt>400)assistView={fresh:false,unloaded:[false,false,false,false]};
  layout.begin();
- const presented=presentationView(assistView,performance.now());
- layout.group('brake',()=>{bar(70,online?s.brake:0,'#ff354d','刹车',online);if(online&&presented.fresh)pedalAssist(70,presented.brake);});
- layout.group('throttle',()=>{bar(930,online?s.throttle:0,'#3eff97','油门',online);if(online&&presented.fresh)pedalAssist(930,presented.drive);});
- layout.group('wheel',()=>{
- ctx.save();ctx.translate(500,450);ctx.rotate(angle*Math.PI/180);ctx.scale(740/1315,740/1315);ctx.translate(-657.5,-598.5);
- if(image.complete&&image.naturalWidth){ctx.shadowColor='#03050b';ctx.shadowBlur=(3)*paintScale;ctx.shadowOffsetX=(2)*paintScale;ctx.drawImage(image,0,0);ctx.shadowBlur=(0)*paintScale;ctx.shadowOffsetX=(0)*paintScale;}
- 
- if(window.DashRenderer)ctx.drawImage(DashRenderer.render({...s,angle},Number(params.get('page')||1)),529,344,256,81.4);
+ uiInfo.waiting=!demo&&telemetryWaiting(s.game,now);
+ for(const key of ['absActive','tcActive','escActive'])if(online&&s.game?.statuses?.[key]===true)latch[key]=now+220;
+ for(let i=0;i<4;i++)advanceWheelLock(s,online,assistView,i,now);
+ const presented=presentationView(assistView,now);
+ const retained=params.get('edit')==='1'?null:componentPaint;
+ layout.group('brake',()=>{bar(70,online?s.brake:0,UI.colors.brake,'刹车',online);if(online&&presented.fresh)pedalAssist(70,presented.brake);});
+ layout.group('throttle',()=>{bar(930,online?s.throttle:0,UI.colors.throttle,'油门',online);if(online&&presented.fresh)pedalAssist(930,presented.drive);});
+ const map=s.inputProfile?.buttonMap;if(Array.isArray(map)&&map.length)controls.forEach((c,i)=>{if(Number.isInteger(map[i]))c.b=[map[i]];});
  const pressed=new Set(online?s.buttons:[]);let led=s.leds||{};const liveButtonLights=online&&buttonLightsAvailable(led);
- const map=s.inputProfile?.buttonMap;if(Array.isArray(map))controls.forEach((c,i)=>c.b=[Number.isInteger(map[i])?map[i]:i+1]);
  uiInfo.ambientButtons=!liveButtonLights;
- uiInfo.waiting=!demo&&telemetryWaiting(s.game,performance.now());
  const tendency=assistView.grip?.steeringState;
  const ambientAlert=Math.max(0,Math.min(tendency?.front||0,tendency?.rear||0),...Object.values(assistView.grip?.axles||{}).map(x=>x.overrun||0),...(s.game?.speedKmh>10?s.game?.wheels||[]:[]).map(w=>Math.max(0,Math.min(1,(-(w.ratio||0)-.65)/.35))));
+ // Screen-only fallback: game-reported shift thresholds, not a hardware LED acknowledgement.
+ if(!(online&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&s.game?.available){
+  const lights=shiftLightColors(s.game,now);
+  if(lights){led={...led,rpm:lights.colors};uiInfo.rpmLightSource=lights.source;}else uiInfo.rpmLightSource='unavailable';
+ }else uiInfo.rpmLightSource=led.available===true?'observed-device':'unavailable';
+ const knobPaint=encoders.map(e=>{
+  const n=e.led-8,rawColor=(led.knobs||[])[n],ambient=!(online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
+  const color=ambient?ambientButtonColor(e,now,ambientAlert):emittedColor(rawColor);
+  if(Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;
+  else for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;
+  return {e,n,color,ambient};
+ });
+ uiInfo.ambientKnobs=knobPaint.some(x=>x.ambient);
+ const dashboardState={...s,angle};
+ const faceKey=JSON.stringify([dashboardState,led,knobPositions,ambientAlert,Math.floor(now/33)]);
+ const drawFace=()=>{
+ if(image.complete&&image.naturalWidth){ctx.shadowColor='#03050b';ctx.shadowBlur=(3)*paintScale;ctx.shadowOffsetX=(2)*paintScale;ctx.drawImage(wheelImage(),0,0);ctx.shadowBlur=(0)*paintScale;ctx.shadowOffsetX=(0)*paintScale;}
+ if(image.complete&&image.naturalWidth)centreStripe();
+ if(window.DashRenderer)ctx.drawImage(DashRenderer.render(dashboardState,Number(params.get('page')||1)),529,344,256,81.4);
  // Shapes measured from the original wheel image: 3 brow + 10 centre + 3 brow.
- if(!liveButtonLights&&s.game?.available&&s.game.maxRpm>0){const fraction=Math.max(0,Math.min(1,s.game.rpm/s.game.maxRpm));led={...led,rpm:ledShapes.map((_,i)=>i<Math.round(fraction*ledShapes.length)?(fraction>.96?(Math.floor(now/100)%2?'#ff314d':'#28050b'):fraction>.86?'#f0bb62':fraction>.7?'#8dcdb8':'#83a8d5'):'#11171e')};}
  for(const shape of ledShapes){const points=shape.points,light=emittedColor((led.rpm||[])[shape.led]);ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.lineJoin='round';ctx.lineWidth=7;ctx.strokeStyle='#171b20';ctx.fillStyle='#11171e';ctx.stroke();ctx.fill();
   if(light){ctx.fillStyle=light;ctx.fill();}ctx.lineWidth=1.3;ctx.strokeStyle=light?'#d9e5eb55':'#53617088';ctx.stroke();
  }
- for(const c of controls){if(c.led!==undefined)buttonCap(c,liveButtonLights&&typeof (led.buttons||[])[c.led]==='string'?(led.buttons||[])[c.led]:ambientButtonColor(c,now,ambientAlert),!liveButtonLights);const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;if(c.b.some(b=>pressed.has(b))||axisValue>1){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
- uiInfo.ambientKnobs=false;
- for(const e of encoders){const n=e.led-8,rawColor=(led.knobs||[])[n],ambient=!(online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor)),color=ambient?ambientButtonColor(e,now,ambientAlert):emittedColor(rawColor);if(ambient)uiInfo.ambientKnobs=true;if(Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;else for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;
+ for(const c of controls){if(c.led!==undefined)buttonCap(c,liveButtonLights?(led.buttons||[])[c.led]:ambientButtonColor(c,now,ambientAlert),!liveButtonLights);const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;if(c.b.some(b=>pressed.has(b))||axisValue>1){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
+ for(const {e,n,color,ambient} of knobPaint){
   // Concentric graphite bezel, fine detent marks and one selected sector.
   circle(e.x,e.y,69,'#0b1017','#778493',2);circle(e.x,e.y,64,'#202a36','#05090e',3);
   for(let i=0;i<12;i++){const a=i*Math.PI/6-Math.PI/2,selected=i===knobPositions[n];ctx.beginPath();ctx.arc(e.x,e.y,53,a+.045,a+Math.PI/6-.045);ctx.lineWidth=selected?17:10;ctx.strokeStyle=selected?(color||'#d8e5ee'):'#344150';ctx.stroke();
@@ -313,26 +423,137 @@ function render(now){runtimePerf.renders++;
   if(color){ctx.save();ctx.shadowColor=color;ctx.shadowBlur=(ambient?15:0)*paintScale;ctx.beginPath();ctx.arc(e.x,e.y,65,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=ambient?4:3;ctx.stroke();ctx.restore();}
   const cap=ctx.createRadialGradient(e.x-10,e.y-12,2,e.x,e.y,38);cap.addColorStop(0,'#404c58');cap.addColorStop(1,'#141c26');circle(e.x,e.y,37,cap,'#080e16',3);
   for(let j=0;j<20;j++){const a=j*Math.PI/10;ctx.beginPath();ctx.moveTo(e.x+33*Math.cos(a),e.y+33*Math.sin(a));ctx.lineTo(e.x+37*Math.cos(a),e.y+37*Math.sin(a));ctx.strokeStyle='#76839166';ctx.lineWidth=1.5;ctx.stroke();}
-  text(knobPositions[n]===null?'—':String(knobPositions[n]+1),e.x,e.y,29,'#f1f7ff');
+  text(knobPositions[n]===null?'—':String(knobPositions[n]+1),e.x,e.y,UI.sizes.wheelKnob,'#f1f7ff');
   if(e.b.some(b=>pressed.has(b)))circle(e.x,e.y,73,'#ffffff00','#ffdc48',4);
  }
  for(const c of controls){const active=c.b.filter(b=>pressed.has(b));if(active.length)text(active.join('·'),c.x,c.y,c.r<20?18:23,'#eafaff');}
  const extra=[...pressed].filter(n=>!controls.some(c=>c.b.includes(n)));
  if(extra.length)text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
+ };
+ layout.group('wheel',()=>{
+ ctx.save();ctx.translate(500,450);ctx.rotate(paintAngle*Math.PI/180);ctx.scale(740/1315,740/1315);
+ // Calibrated opaque rim: x=76..1234, y=33..1172. Correct the original
+ // photograph before rotation; all buttons and the dashboard share this transform.
+ ctx.scale(1139/1158,1);ctx.translate(-655,-602.5);
+ paintWheelFace(faceKey,drawFace);
  ctx.restore();
- uiInfo.waiting=!demo&&telemetryWaiting(s.game,performance.now());waitingBadge(uiInfo.waiting);
+ waitingBadge(uiInfo.waiting);
  });
- for(let i=0;i<4;i++)layout.group('slip'+i,()=>wheelSlip(s,online,assistView,i));
- drivingUi(s,online,assistView);
- layout.group('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,24,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,38,'#fff');}
+ for(let i=0;i<4;i++)layout.group('slip'+i,()=>wheelSlip(s,online,assistView,i,false));
+ drivingUi(s,online,presented);
+ layout.group('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
  });
- layout.group('statuses',()=>statuses(s,online));
- gBallView=gBallModel?.update(online?s.game:null,qa&&Number.isFinite(qaClock)?qaClock:performance.now());
+ layout.group('statuses',()=>statuses(s,online,false));
+
  layout.group('gBall',()=>drawGBall(gBallView));
- layout.flush(ctx);
- if(demo)text('演示数据',500,839,16,'#ffdc48');
- if(!qa)requestAnimationFrame(render);
+ layout.group('flags',()=>{if(online)flagBanner(s.game);});
+ finishScene(stage,raster,retained,s,online,presented,now);
 }
-async function poll(){const requestAt=performance.now();try{const r=await fetch('/state',{cache:'no-store'});if(!r.ok)throw Error(r.status);state=await r.json();observeCost('network',performance.now()-requestAt);lastGood=Date.now();const processAt=performance.now();assistView=assistModel.update(state,processAt);observeCost('algorithm',performance.now()-processAt);runtimePerf.polls++;if(state.game?.packet!==runtimePerf.lastPacket){runtimePerf.uniquePackets++;runtimePerf.lastPacket=state.game?.packet;}}catch(e){runtimePerf.errors++;state={connected:false,error:'输入服务已断开'};}setTimeout(poll,16);}
-if(!demo&&!qa)poll();requestAnimationFrame(render);
-window.overlayDiagnostics={controls,encoders,getPerformance,getGBall:()=>gBallView,resetGPeak:()=>gBallModel?.clearPeak(),getUi:()=>({...uiInfo}),getState:()=>state,getAssist:()=>assistView,getPresentation:()=>presentation,setTestState:(s,at)=>{if(qa){state=s;lastGood=Date.now();if(Number.isFinite(at)){qaClock=at;assistView=assistModel.update(s,at);}else if(qaClock!==null)qaClock+=20;}}};
+
+// Three independent clocks: telemetry owns estimation; this 30 Hz fallback owns
+// decoration/deadlines; requestAnimationFrame only submits the newest prepared scene.
+let preparedScene=null,paintPending=false,sceneTimer=null,sceneSignature=null;
+function finishScene(stage,raster,retained,s,online,presented,now){
+ const jobs=layout.capture?.();
+ const keys=Object.fromEntries((jobs||[]).map(j=>[j.id,JSON.stringify(componentKey(j.id,s,online,presented,now))]));
+ preparedScene={stage,raster,retained,jobs,keys,game:s.game};
+ const signature=JSON.stringify([stage,raster,jobs?.map(j=>[j.id,j.c]),keys,layout.selection?.()]);
+ if(signature===sceneSignature)return;sceneSignature=signature;
+ if(!qa&&!paintPending){paintPending=true;requestAnimationFrame(render);}
+}
+function render(at=performance.now()){
+ if(!qa){paintPending=true;requestAnimationFrame(render);}else paintPending=false;
+ runtimePerf.displayFrames=(runtimePerf.displayFrames||0)+1;
+ if(displayLastAt!==null){const dt=at-displayLastAt;runtimePerf.displayElapsed=(runtimePerf.displayElapsed||0)+dt;runtimePerf.slowDisplayFrames=(runtimePerf.slowDisplayFrames||0)+(dt>20?1:0);}displayLastAt=at;
+ if(!preparedScene)return;
+ paintAngle=qa?angle:steeringAt(at);
+ const paintSignature=sceneSignature+'@'+paintAngle;
+ if(!qa&&paintSignature===lastPaintSignature)return;lastPaintSignature=paintSignature;
+ const {stage,raster,retained,jobs,keys,game}=preparedScene;
+ runtimePerf.renders++;
+ if(canvas.width!==raster.width||canvas.height!==raster.height){canvas.width=raster.width;canvas.height=raster.height;}
+ ctx.setTransform(1,0,0,1,0,0);
+ if(!retained)ctx.clearRect(0,0,canvas.width,canvas.height);
+ ctx.setTransform(stage.scale*raster.width/stage.width,0,0,stage.scale*raster.height/stage.height,stage.originX*raster.width/stage.width,stage.originY*raster.height/stage.height);
+ retained?.begin(canvas,stage,raster,id=>id==='wheel'?keys[id]+'@'+paintAngle:keys[id]);
+ layout.flush(ctx,retained,jobs);
+ if(demo)text('演示数据',500,839,16,'#ffdc48');
+}
+function queueScene(now=performance.now()){
+ prepareScene(now);
+ if(!qa&&typeof clearTimeout==='function'){
+  clearTimeout(sceneTimer);
+  sceneTimer=setTimeout(()=>{
+   // No new telemetry: age displayed state without re-running the physical model.
+   if(performance.now()-lastInputAt>400&&gBallModel)gBallView=gBallModel.age(performance.now());
+   queueScene(performance.now());
+  },1000/30);
+ }
+}
+let lastInputAt=-Infinity;
+function startSceneClock(){
+ image.onload=()=>queueScene(performance.now());
+ layout.onChange?.(()=>queueScene(performance.now()));
+ if(typeof addEventListener==='function')addEventListener('resize',()=>queueScene(performance.now()));
+ if(typeof window!=='undefined')window.addEventListener('overlay-refresh',()=>{if(componentPaint)componentPaint.invalidate();sceneSignature=null;queueScene(performance.now());});
+ if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(componentPaint)componentPaint.invalidate();sceneSignature=null;queueScene(performance.now());}});
+ if(demo){
+  const sample=()=>{const now=performance.now();state={connected:true,angle:35*Math.sin(now/1800),brake:Math.max(0,Math.sin(now/1300))*100,throttle:Math.max(0,Math.cos(now/1700))*100,buttons:[17,26,54],leds:{buttons:['#56f7fc','#ff3165','#56f7fc','#56f7fc','#56f7fc','#56f7fc','#56f7fc','#56f7fc'],knobs:['#ff3366','#2ee973','#315aff','#ff651c'],rpm:Array.from({length:16},(_,i)=>i<11?'#45f7c0':'#111')},ledSource:'demo'};
+   observeSteering(state,now);lastInputAt=now;lastGood=Date.now();assistView=assistModel.update(state,now);gBallView=gBallModel?.update(null,now);
+   queueScene(now);setTimeout(sample,1000/60);
+  };sample();
+ }else if(!qa)queueScene(performance.now());
+}
+function testState(s,at){
+ if(!qa)return;state=s;observeSteering(state,performance.now());lastGood=Date.now();lastInputAt=performance.now();
+ qaClock=Number.isFinite(at)?at:qaClock===null?performance.now():qaClock+20;
+ assistView=assistModel.update(s,qaClock);gBallView=gBallModel?.update(s.connected?s.game:null,qaClock);
+}
+
+let stream=null,streaming=false,streamLast=0,feedEpoch=0,pendingFrame=null,processing=false;
+async function consume(incoming,receivedAt){
+ if(pendingFrame)runtimePerf.coalescedFrames=(runtimePerf.coalescedFrames||0)+1;
+ pendingFrame={incoming,receivedAt};if(processing)return;
+ processing=true;
+ try{while(pendingFrame){
+  const frame=pendingFrame;pendingFrame=null;
+  const processAt=performance.now(),result=processor?await processor.run(frame.incoming,frame.receivedAt):{view:assistModel.update(frame.incoming,frame.receivedAt),costMs:performance.now()-processAt,mode:'main'};
+  state=frame.incoming;observeSteering(state,performance.now());assistView=result.view;lastGood=Date.now();lastInputAt=performance.now();runtimePerf.processingMode=result.mode;
+  observeCost('algorithm',result.costMs);runtimePerf.polls++;
+  if(state.game?.packet!==runtimePerf.lastPacket){runtimePerf.uniquePackets++;runtimePerf.lastPacket=state.game?.packet;}
+  gBallView=gBallModel?.update(state.connected?state.game:null,frame.receivedAt);queueScene(performance.now());
+ }}finally{processing=false;}
+}
+function loseStream(source){
+ if(source!==stream)return;source.close();stream=null;streaming=false;feedEpoch++;setTimeout(openStream,1000);
+}
+function openStream(){
+ if(stream||typeof EventSource==='undefined')return;
+ try{
+  const source=new EventSource('/events');stream=source;
+  source.onmessage=event=>{
+   if(source!==stream)return;
+   try{const incoming=JSON.parse(event.data);if(!incoming||typeof incoming!=='object'||Array.isArray(incoming)||typeof incoming.connected!=='boolean')throw Error('Invalid snapshot');
+    if(!streaming)feedEpoch++;streamLast=performance.now();streaming=true;runtimePerf.streamFrames=(runtimePerf.streamFrames||0)+1;
+    consume(incoming,streamLast).catch(()=>loseStream(source));
+   }catch{loseStream(source);}
+  };
+  source.onerror=()=>loseStream(source);
+ }catch{stream=null;setTimeout(openStream,1000);}
+}
+async function poll(){
+ const requestAt=performance.now();
+ if(streaming&&requestAt-streamLast>400)loseStream(stream);
+ if(streaming){setTimeout(poll,100);return;}
+ const epoch=feedEpoch,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),1500);
+ try{
+  const r=await fetch('/state',{cache:'no-store',signal:controller.signal});if(!r.ok)throw Error(r.status);
+  const incoming=await r.json();
+  // An in-flight fallback response cannot overwrite a newer streaming frame.
+  if(!streaming&&epoch===feedEpoch){observeCost('network',performance.now()-requestAt);await consume(incoming,performance.now());}
+ }catch(e){if(!streaming&&epoch===feedEpoch){runtimePerf.errors++;state={connected:false,error:'输入服务已断开'};assistView={fresh:false,unloaded:[false,false,false,false]};gBallView=gBallModel?.update(null,performance.now());queueScene(performance.now());}}
+ finally{clearTimeout(timeout);}
+ setTimeout(poll,Math.max(0,1000/60-(performance.now()-requestAt)));
+}
+if(!demo&&!qa){openStream();poll();}startSceneClock();
+window.overlayDiagnostics={controls,encoders,getPerformance,getGBall:()=>gBallView,resetGPeak:()=>gBallModel?.clearPeak(),getUi:()=>({...uiInfo}),getState:()=>state,getAssist:()=>assistView,getPresentation:()=>presentation,getPaint:()=>componentPaint?.stats,getWheelFace:()=>({...wheelFaceStats}),renderTest:at=>{if(qa){prepareScene(at??performance.now());render();}},paintTest:()=>{if(qa)render();},setTestState:testState};

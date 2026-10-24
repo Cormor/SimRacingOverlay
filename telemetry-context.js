@@ -26,6 +26,7 @@
   if(!Array.isArray(src.wheels)||src.wheels.length!==4||src.wheels.some(w=>!w||typeof w!=='object'))return {...s,game:{available:false}};
   const g={...src};
   for(const [k,lo,hi] of [['speedKmh',0,650],['gas',0,1],['brake',0,1],['clutch',0,1],['sampleTime',0,1e15],['roadWheelAngle',-Math.PI/2,Math.PI/2],['wheelbase',1,5]])g[k]=number(src[k],lo,hi);
+  for(const [k,lo,hi] of [['yawRate',-30,30],['steeringWheelAngle',-20,20],['steeringShaftTorqueNm',-200,200],['pitchRate',-30,30],['rollRate',-30,30]])g[k]=number(src[k],lo,hi);
   for(const [k,b] of [['velocity',250],['localVelocity',250],['angularVelocity',100],['accG',30]])g[k]=vector(src[k],b);
   g.wheels=src.wheels.map(w=>{
    const n={...w};

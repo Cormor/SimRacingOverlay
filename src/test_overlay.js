@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
 const calls=[],ctx=new Proxy({fillStyle:'#000'},{get(o,k){if(k in o)return o[k];if(k==='createRadialGradient'||k==='createLinearGradient')return ()=>({addColorStop(){}});if(k==='arc')return (...args)=>calls.push({kind:'arc',args});if(k==='fillRect')return (...rect)=>calls.push({kind:'fill',rect,color:o.fillStyle});if(k==='lineTo')return (...args)=>calls.push({kind:'line',args,color:o.strokeStyle});if(k==='moveTo')return (...args)=>calls.push({kind:'move',args});if(k==='roundRect')return (...rect)=>calls.push({kind:'rect',rect,color:o.fillStyle});if(k==='fillText')return function(t,x,y){calls.push({text:t,x,y,color:o.fillStyle});};return ()=>{};},set(o,k,v){o[k]=v;return true;}});
 let now=1000;
-const sandbox={DrivingAssist:require('../assist.js'),document:{getElementById:()=>({getContext:()=>ctx})},Image:class{},URLSearchParams,location:{search:'?demo=1'},window:{},performance:{now:()=>now},requestAnimationFrame:()=>{},setTimeout:()=>{},fetch:()=>Promise.resolve({json:()=>({})}),console};
+const sandbox={DrivingAssist:require('../assist.js'),document:{addEventListener(){},getElementById:()=>({getContext:()=>ctx})},Image:class{},URLSearchParams,location:{search:'?demo=1'},window:{addEventListener(){}},performance:{now:()=>now},requestAnimationFrame:()=>{},setTimeout:()=>{},fetch:()=>Promise.resolve({json:()=>({})}),console};
 vm.createContext(sandbox);vm.runInContext(fs.readFileSync(path.join(__dirname,'../overlay.js'),'utf8'),sandbox);
 function draw(fn,input){calls.length=0;sandbox.input=input;vm.runInContext(fn+'(input,true)',sandbox);return [...calls];}
 const state={game:{available:true,statuses:{absActive:true,tcActive:false,escActive:null}},handbrake:0};
@@ -114,3 +114,14 @@ assert.equal(vm.runInContext('telemetryWaiting(tg,1700)',sandbox),true,'frozen p
 sandbox.tg.packet=2;assert.equal(vm.runInContext('telemetryWaiting(tg,1720)',sandbox),false);
 assert(!fs.readFileSync(path.join(__dirname,'../overlay.js'),'utf8').includes('!assistView.fresh||!liveButtonLights'));
 console.log('PASS: pending follows game packets, not lights/assist freshness; brief gap tolerance; real stall and immediate recovery.');
+
+calls.length=0;sandbox.bodyPart={directions:{lateral:{available:true,current:.7,danger:.3,shared:true}}};
+vm.runInContext('wheelLateral(245,34,bodyPart,false,true,0)',sandbox);
+assert(!calls.some(c=>c.text==='车身侧滑'),'shared observation must not add display text');
+
+assert.equal(vm.runInContext('shiftLightColors({available:true,shiftLights:{indicator:0}},1000).colors.filter(c=>c!=="#11171e").length',sandbox),0,'reported zero indicator is real OFF');
+assert.equal(vm.runInContext('shiftLightColors({available:true,rpm:7000,shiftLights:{indicator:.5,firstRpm:6000,lastRpm:7000}},1000).colors.filter(c=>c!=="#11171e").length',sandbox),8,'native indicator takes priority over a derived RPM fraction');
+assert.equal(vm.runInContext('shiftLightColors({available:true,rpm:6500,shiftLights:{firstRpm:6000,lastRpm:7000}},1000).colors.filter(c=>c!=="#11171e").length',sandbox),8,'reported RPM thresholds are an independent fallback');
+assert.equal(vm.runInContext('shiftLightColors({available:true,rpm:6500},1000)',sandbox),null,'unknown thresholds are not fabricated');
+assert.notEqual(vm.runInContext('shiftLightColors({available:true,rpm:7200,shiftLights:{indicator:1,blinkRpm:7100}},1000).colors[0]',sandbox),vm.runInContext('shiftLightColors({available:true,rpm:7200,shiftLights:{indicator:1,blinkRpm:7100}},1100).colors[0]',sandbox),'reported shift blink follows presentation time');
+console.log('PASS: native shift indicator, real zero/OFF, optional RPM fallback, unknown thresholds and blink timing.');

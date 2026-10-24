@@ -7,6 +7,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 // Read-only generic SimHub fallback. Never changes properties or calls AZOM actions.
 static class SimHubTelemetry {
+ static long nativeAt;public static void NativeObserved(){Interlocked.Exchange(ref nativeAt,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());}
  static readonly object gate=new object();static object cached=new {available=false};static long stamp;static string lastFrame;static int packet;static DateTime? lastFrameTime;static string lastFrameKey;
  sealed class LocalClient:WebClient {protected override WebRequest GetWebRequest(Uri address){var r=base.GetWebRequest(address);r.Timeout=350;r.Proxy=null;return r;}}
  static Dictionary<string,object> Map(object o){return o as Dictionary<string,object>;}
@@ -22,7 +23,7 @@ static class SimHubTelemetry {
  public static void Start(){new Thread(Poll){IsBackground=true,Name="MOZA read-only SimHub telemetry"}.Start();}
  static void Poll(){var json=new JavaScriptSerializer();string probeCode=null;var root=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".."));
   try{probeCode=File.ReadAllText(Path.Combine(root,"assets","telemetry-probe.js"));}catch{}
-  while(true){bool native=false;try{
+  while(true){if(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()-Interlocked.Read(ref nativeAt)<100){Thread.Sleep(100);continue;}bool native=false;try{
    int port=8888;try{port=(int)Math.Max(1024,Math.Min(65535,Num(json.Deserialize<Dictionary<string,object>>(File.ReadAllText(Path.Combine(root,"settings.json"))),"simHubPort")??8888));}catch{}
    Dictionary<string,object> data=null;
    using(var c=new LocalClient()){c.Encoding=Encoding.UTF8;

@@ -8,4 +8,4 @@ The project license applies only to this project's original code and artwork, no
 - **Python 3.14** (inside the optional standalone observer): Python Software Foundation License, see `licenses/Python-LICENSE`.
 - **PyInstaller bootloader**: GPL with an exception allowing distribution of generated executables under other licenses. Upstream license and exception: https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt . See `licenses/PyInstaller-COPYING.txt`.
 
-SimHub, OBS Studio and MOZA Pit House are separately installed software and are not bundled. The generic wheel SVG and dashboard are original assets; no product photos, personal dashboard assets or third-party fonts are included.
+SimHub, OBS Studio and MOZA Pit House are separately installed software and are not bundled. The distribution includes the shared wheel image and dashboard appearance. Brand names and marks remain the property of their respective owners. The dashboard renderer uses system-font fallbacks and does not require separately installed fonts.

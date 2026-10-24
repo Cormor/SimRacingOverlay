@@ -21,6 +21,7 @@
    if(now-this.noDataSince>=30000)return this.clearTelemetry(now);
    return this.view(now);
   }
+  age(now){this.viewNow=now;return this.noData(now);}
   update(g,now){
    this.viewNow=now;
    if(this.pendingRestore){const cached=this.pendingRestore;this.pendingRestore=null;this.noDataSince=now-(30000-cached.remaining);this.trail=cached.trail.map(p=>({...p,t:this.noDataSince-p.age}));}

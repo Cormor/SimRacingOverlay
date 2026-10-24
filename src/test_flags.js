@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),Flags=require('../flags');
+assert.equal(Flags.current(0x10).name,'红旗');
+assert.equal(Flags.current(0x100).name,'黄旗挥动');
+assert.equal(Flags.current(0x8|0x4).name,'黄旗');
+assert.equal(Flags.current(0x20|0x4).name,'蓝旗');
+assert.equal(Flags.current(0x2).name,'白旗');
+assert.equal(Flags.current(0x40).name,'杂物旗');
+assert.equal(Flags.current(0x4).name,'绿旗');
+assert.equal(Flags.current(0x1).name,'方格旗');
+assert.equal(Flags.current(0x200).name,'一圈后绿旗');
+assert.equal(Flags.current(0),null);
+assert.equal(Flags.current(null),null);
+assert.equal(Flags.current(0x10040200).name,'一圈后绿旗','start/servicible flags do not hide the real flag mapping');
+assert.equal(Flags.current(0x10000000),null,'start lights alone are not a race flag');
+console.log('PASS: iRacing flag priority, Chinese names, descriptions and unknown/start-only flags.');

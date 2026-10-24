@@ -17,21 +17,21 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
    catch(e){fs.writeFileSync(path.join(root,'runtime','display-sync-error.txt'),String(e.message));}
   });
  }
- function desktopScene(s,d){const size=requestedSize(s,d),area=d.bounds,p=pixelDisplayId===d.id?displayPixels:null;return {width:area.width,height:area.height,originX:Number.isFinite(s.x)&&s.x!==-1?s.x:area.width-size.width-24,originY:Number.isFinite(s.y)&&s.y!==-1?s.y:area.height-size.height-24,scale:size.width/1000,pixelWidth:p?.width||Math.round(area.width*d.scaleFactor),pixelHeight:p?.height||Math.round(area.height*d.scaleFactor),monitorPixelWidth:p?.width||Math.round(d.bounds.width*d.scaleFactor),monitorPixelHeight:p?.height||Math.round(d.bounds.height*d.scaleFactor)};}
+ function desktopScene(s,d){const size=requestedSize(s,d),area=d.bounds,p=pixelDisplayId===d.id?displayPixels:null;return {...(s.placement?.mode==='relative'?require('./layout.js').screenStage(area.width,area.height,s.placement):{width:area.width,height:area.height,originX:Number.isFinite(s.x)&&s.x!==-1?s.x:area.width-size.width-24,originY:Number.isFinite(s.y)&&s.y!==-1?s.y:area.height-size.height-24,scale:size.width/1000}),pixelWidth:p?.width||Math.round(area.width*d.scaleFactor),pixelHeight:p?.height||Math.round(area.height*d.scaleFactor),monitorPixelWidth:p?.width||Math.round(d.bounds.width*d.scaleFactor),monitorPixelHeight:p?.height||Math.round(d.bounds.height*d.scaleFactor)};}
  function saveScene(scene){const target=path.join(root,'assets','layout.json');try{const old=JSON.parse(fs.readFileSync(target,'utf8'));if(JSON.stringify(old.stage)===JSON.stringify(scene))return;const value=require('./layout.js').clean({...old,stage:scene});fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);}catch(err){fs.writeFileSync(path.join(root,'runtime','layout-error.txt'),String(err));}}
  function apply(){if(!win||win.isDestroyed())return;if(move||resize)return;const s=settings();
   if(win.webContents.getURL().includes('&edit=1')&&!s.edit&&!exitPrepared){
    if(!exiting){exiting=true;win.webContents.executeJavaScript('window.overlayEditor?.flushSaveNow() ?? ({ok:true})').then(result=>{if(result?.ok)exitPrepared=true;else{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));}exiting=false;last='';apply();}).catch(()=>{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));exiting=false;last='';});}return;
   }
   const display=selectedDisplay();
-  const revision=['overlay.js','assist.js','realtime-response.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
+  const revision=['ui.css','ui-theme.js','flags.js','legacy-chassis-response.js','component-paint.js','telemetry-worker.js','telemetry-processor.js','overlay.js','assist.js','chassis-response.js','realtime-response.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout-preset.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
   const displays=screen.getAllDisplays(),d=s.monitor>0?displays[Math.min(displays.length-1,s.monitor-1)]:screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=d.bounds,scene=desktopScene(s,d);saveScene(scene);
   applying=true;suppressUntil=Date.now()+500;win.setBounds({...area});
   const actual=win.getBounds();if(actual.width>area.width||actual.height>area.height)win.setBounds({x:area.x,y:area.y,width:Math.max(1,area.width-Math.max(0,actual.width-area.width)),height:Math.max(1,area.height-Math.max(0,actual.height-area.height))});
   applying=false;win.setAlwaysOnTop(true,'screen-saver');win.setIgnoreMouseEvents(!s.edit,{forward:true});win.setResizable(false);win.setFocusable(!!s.edit);
   const url=baseUrl+'?page='+Math.max(1,Math.min(2,s.page||1))+'&edit='+(s.edit?'1':'0')+'&stage='+encodeURIComponent(JSON.stringify(scene))+'&v='+revision;if(win.webContents.getURL()!==url){win.loadURL(url);exitPrepared=false;}
-  if(s.visible)win.showInactive();else win.hide();
+  if(s.visible||s.edit)win.showInactive();else win.hide();
   fs.writeFileSync(statusFile,JSON.stringify({pid:process.pid,visible:win.isVisible(),bounds:win.getBounds(),alwaysOnTop:win.isAlwaysOnTop(),transparent:true,clickThrough:!s.edit,scene,displays:displays.map(d=>({id:d.id,bounds:d.bounds,workArea:d.workArea,scaleFactor:d.scaleFactor}))},null,2));
  }
  app.whenReady().then(()=>{
@@ -48,6 +48,11 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   ipcMain.on('resize-start',(e,p)=>{if(e.sender===win.webContents&&settings().edit)resize={...p,width:settings().width};});
   ipcMain.on('resize-move',(e,p)=>{if(e.sender!==win.webContents||!resize)return;const dx=p.x-resize.x,dy=(p.y-resize.y)/.85,delta=Math.abs(dx)>Math.abs(dy)?dx:dy,s=settings();s.width=Math.max(250,Math.min(1600,Math.round(resize.width+delta)));fs.writeFileSync(config,JSON.stringify(s));const scene=desktopScene(s,screen.getDisplayMatching(win.getBounds()));saveScene(scene);win.webContents.send('scene-change',scene);});
   ipcMain.on('resize-end',()=>{resize=null;last='';apply();});
+  // Bounded first-run readback. Captures this overlay only, never the desktop.
+  win.webContents.on('did-finish-load',()=>setTimeout(async()=>{
+   try{const info=await win.webContents.executeJavaScript('JSON.stringify({ui:overlayDiagnostics.getUi(),performance:overlayDiagnostics.getPerformance(),editor:overlayEditor.getStatus(),image:{loaded:image.complete&&image.naturalWidth>0,width:image.naturalWidth,height:image.naturalHeight},dashError:window.DashRenderer?.getError(),canvas:[canvas.width,canvas.height]})');fs.writeFileSync(path.join(root,'runtime','desktop-render-state.json'),info);if(win.isVisible()){const screenshot=await win.webContents.capturePage();fs.writeFileSync(path.join(root,'runtime','desktop-render.png'),screenshot.toPNG());}}
+   catch(error){fs.writeFileSync(path.join(root,'runtime','desktop-error.txt'),String(error.message));}
+  },2000));
   win.setMenu(null);win.setIgnoreMouseEvents(true,{forward:true});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(baseUrl))event.preventDefault();});
   win.webContents.on('did-fail-load',()=>setTimeout(()=>win.webContents.reload(),1000));

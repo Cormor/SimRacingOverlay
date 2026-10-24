@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),{Client}=require('../telemetry-processor');
+(async()=>{
+ let fallback=0,terminated=0,worker={postMessage(message){this.message=message;},terminate(){terminated++;}};
+ const c=new Client((s,now)=>{fallback++;return {sample:s.packet,now};},()=>worker,true);
+ const pending=c.run({packet:7},20);assert.throws(()=>c.run({},21),/one telemetry sample/);
+ worker.onmessage({data:{id:999,view:{}}});assert(c.pending,'late reply cannot consume the current sample');
+ worker.onmessage({data:{id:worker.message.id,view:{fresh:true},costMs:.1}});
+ assert.equal((await pending).mode,'worker');assert.equal(fallback,0);
+ const failed=c.run({packet:8},40);worker.onerror();let result=await failed;
+ assert.equal(result.mode,'main');assert.equal(result.view.sample,8);assert.equal(terminated,1);
+ result=await c.run({packet:9},60);assert.equal(result.view.sample,9);
+ const timeout=new Client(s=>s,()=>({postMessage(){},terminate(){}}),true);assert.equal((await timeout.run({packet:10},80)).mode,'main');
+ const cheap=new Client(s=>s,()=>{throw Error('cheap workloads must stay inline');});for(let i=0;i<70;i++)assert.equal((await cheap.run({},i)).mode,'main');
+ let promotions=0;
+ const heavy=new Client(s=>{const until=performance.now()+4;while(performance.now()<until){}return s;},()=>{promotions++;return {postMessage(data){queueMicrotask(()=>this.onmessage({data:{id:data.id,view:data.state,costMs:4}}));},terminate(){}};});
+ for(let i=0;i<65;i++)result=await heavy.run({packet:i},i);
+ assert.equal(promotions,1);assert.equal(result.mode,'worker','sustained costly work migrates once');
+ const unsupported=new Client(s=>s,()=>{throw Error('unsupported');},true);assert.equal((await unsupported.run({},0)).mode,'main');
+ console.log('PASS: cheap inline / expensive worker promotion, bounded queue, stale reply rejection, error/timeout/unsupported fallback and subsequent recovery.');
+})().catch(e=>{console.error(e);process.exitCode=1;});

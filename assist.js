@@ -4,6 +4,7 @@
  const Grip=typeof module!=='undefined'&&module.exports?require('./realtime-response.js'):root.RealtimeResponse;
  const Handling=typeof module!=='undefined'&&module.exports?require('./handling.js').Handling:root.HandlingState.Handling;
  const Context=typeof module!=='undefined'&&module.exports?require('./telemetry-context'):root.TelemetryContext;
+ const Suspension=typeof module!=='undefined'&&module.exports?require('./suspension-contact'):root.SuspensionContact;
  const RAD=180/Math.PI,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
  const vec=v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite);
  const add=(a,b)=>a.map((v,i)=>v+b[i]),sub=(a,b)=>a.map((v,i)=>v-b[i]),mul=(a,k)=>a.map(v=>v*k);
@@ -37,16 +38,16 @@
   return {wheel,wheelbase,forward};
  }
  class Model {
-  constructor(options={}){this.storage=options.storage;this.carCache=new Map();this.savedAt=-Infinity;this.reset();}
-  reset(now=this.advance??0){this.handling=new Handling();if(this.grip&&this.car){const key=this.source+':'+this.car;this.grip.pause();this.carCache.set(key,this.grip);if(this.carCache.size>6)this.carCache.delete(this.carCache.keys().next().value);this.persist(now);}this.grip=new Grip.Estimator();this.packet=null;this.advance=null;this.car=null;this.source=null;this.epoch=undefined;this.sourceTime=null;this.loadSupport=[false,false,false,false];this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
+  constructor(options={}){this.storage=options.storage;this.carCache=new Map();this.savedAt=-Infinity;this.contact=new Suspension.Contact();this.reset();}
+  reset(now=this.advance??0){this.handling=new Handling();if(this.grip&&this.car){const key=this.source+':'+this.car;this.grip.pause();this.carCache.set(key,this.grip);if(this.carCache.size>6)this.carCache.delete(this.carCache.keys().next().value);this.persist(now);}this.grip=new Grip.Estimator();this.contact?.reset();this.packet=null;this.advance=null;this.car=null;this.source=null;this.epoch=undefined;this.sourceTime=null;this.loadSupport=[false,false,false,false];this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
   persist(now){
    if(!this.storage||!this.car||!this.grip)return;
    try{this.storage.setItem('moza-grip-v1:'+this.source+':'+this.car,JSON.stringify(this.grip.snapshot(now)));}catch{}
   }
   update(s,now){
    if(!Number.isFinite(now)||now<0){this.car=null;this.reset(0);return this.view;}
-   s=Context.sanitize(s);const g=s.game;
-   if(!s.connected||!g?.available||g.paused===true||g.inMenu===true||!Number.isInteger(g.packet)||!Array.isArray(g.wheels)||g.wheels.length!==4){this.reset(now);return this.view;}
+   let g=s?.game;
+   if(!s?.connected||!g?.available||g.paused===true||g.inMenu===true||!Number.isInteger(g.packet)||!Array.isArray(g.wheels)||g.wheels.length!==4){this.reset(now);return this.view;}
    if((this.car!==null&&this.car!==g.carModel)||(this.source!==null&&this.source!==g.source)||(this.epoch!==undefined&&this.epoch!==g.streamEpoch)||(Number.isFinite(this.sourceTime)&&Number.isFinite(g.sampleTime)&&g.sampleTime<this.sourceTime))this.reset(now);
    this.epoch=g.streamEpoch;this.sourceTime=g.sampleTime;
    if(this.car===null&&g.carModel){const key=g.source+':'+g.carModel;if(this.carCache.has(key))this.grip=this.carCache.get(key);else if(this.storage){try{this.grip.restore(JSON.parse(this.storage.getItem('moza-grip-v1:'+key)),now);}catch{}}}
@@ -55,6 +56,8 @@
     if(this.advance!==null&&now-this.advance>400){this.grip.pause();this.view={fresh:false,unloaded:[false,false,false,false]};this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};}
     return this.view;
    }
+   s=Context.sanitize(s);g=s.game;
+   if(!g.available){this.reset(now);return this.view;}
    if(this.advance!==null&&now<this.advance){this.car=null;this.carCache.clear();this.reset(now);return this.view;}
    const gap=this.advance===null?0:now-this.advance,dt=gap>0&&gap<250?gap:16;
    if(gap>250){this.grip.pause();this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));}
@@ -63,8 +66,12 @@
    validLoads.forEach((valid,i)=>{if(valid&&loads[i]>=40)this.loadSupport[i]=true;});
    const loadKnownWheels=validLoads.map((valid,i)=>valid&&(this.loadSupport[i]||g.capabilities?.loads===true)),loadKnown=loadKnownWheels.every(Boolean);
    const threshold=clamp(total/Math.max(1,validLoads.filter(Boolean).length)*.025,40,100);
+   // Without measured wheel loads, use the directly measured shock deflection:
+   // a corner at its full extension with stopped extension velocity is treated
+   // as unloaded. Loads, when present, remain authoritative.
+   const contact=this.contact.update(g.wheels,Math.abs(g.speedKmh||0)/3.6,now);
    const unloaded=this.loadState.map((st,i)=>{
-    if(!loadKnownWheels[i]){st.unloaded=false;st.transition=null;return false;}
+    if(!loadKnownWheels[i]){const air=contact.available&&contact.airborne[i];st.unloaded=air;st.transition=null;return air;}
     const next=st.unloaded?loads[i]<threshold*2.5:loads[i]<threshold;
     if(next===st.unloaded)st.transition=null;
     else{if(st.transition===null)st.transition=now;if(now-st.transition>=(next?60:40)){st.unloaded=next;st.transition=null;}}
@@ -123,7 +130,7 @@
     }
    }else{this.samples=[];delete this.filtered.decel;}
    if(now-this.savedAt>3000){this.persist(now);this.savedAt=now;}
-   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,loadKnownWheels,unloaded,steering,lateral,drive,brake,decel,grip};this.view.handling=this.handling.update(s,now,this.view);return this.view;
+   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,loadKnownWheels,unloaded,contact,steering,lateral,drive,brake,decel,grip};this.view.handling=this.handling.update(s,now,this.view);return this.view;
   }
  }
  const api={Model,geometry};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.DrivingAssist=api;

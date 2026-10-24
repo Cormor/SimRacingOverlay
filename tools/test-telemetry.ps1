@@ -17,3 +17,7 @@ Check 'Physics' @('TestPhysicsTelemetry','PhysicsTelemetry') @((Join-Path $out '
 $fixture=Join-Path $out 'simhub-input.json'
 [IO.File]::WriteAllText($fixture,'{"NewData":{}}')
 Check 'SimHub' @('TestSimHubTelemetry','SimHubTelemetry','NativeMotionTelemetry') @($fixture,(Join-Path $out 'normalized.json'))
+
+Check 'IRacing' @('TestIRacingTelemetry','IRacingTelemetry') @((Join-Path $out 'iracing.json'))
+
+Check 'Events' @('TestTelemetryEventStream','TelemetryEventStream') @()

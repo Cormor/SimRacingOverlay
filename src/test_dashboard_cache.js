@@ -1,0 +1,14 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict'),path=require('node:path');
+const calls=[],ctx=new Proxy({}, {get(o,k){return o[k]??((...args)=>calls.push({kind:k,args,color:o.fillStyle,font:o.font}));},set(o,k,v){o[k]=v;return true;}}),window={OverlayTheme:require('../ui-theme')};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../dashboard.js'),'utf8'),{window,document:{createElement:()=>({getContext:()=>ctx})}});
+const api=window.DashRenderer,draw=(s,p=1)=>{calls.length=0;api.render(s,p);return calls.filter(x=>x.kind==='fillText').map(x=>String(x.args[0]));};
+assert.deepEqual(draw({}),['—','—','RPM','km/h','—']);
+assert.deepEqual(draw({game:{available:true,rpm:0,speedKmh:0,gear:0}}),['0','0','RPM','km/h','N']);
+assert(draw({game:{available:true,rpm:5000,speedKmh:123.4,gear:-1,maxRpm:8000}}).includes('R'));
+assert(draw({game:{available:true,rpm:NaN,speedKmh:Infinity,gear:3}}).filter(x=>x==='—').length===2);
+const stable={angle:15,game:{available:true,rpm:5000,speedKmh:120,gear:3,maxRpm:8000}};
+api.render(stable,2);const before=api.getPaintCount();for(let i=0;i<200;i++)api.render({...stable,angle:i,game:{...stable.game,packet:i}},2);assert.equal(api.getPaintCount(),before,'page two instruments ignore packet/steering changes');
+api.render(stable,1);assert(calls.some(x=>x.kind==='rotate'&&x.args[0]===-15*Math.PI/180),'page one keeps gear upright');
+assert(calls.filter(x=>x.kind==='fillText').every(x=>x.font.includes('Cascadia Mono')));
+console.log('PASS: themed dashboard, real zero, missing values, reverse, page-one counter rotation and 200 page-two cache hits');

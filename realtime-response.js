@@ -1,6 +1,9 @@
 'use strict';
 // Separate present slip state from conditional, <=100ms incremental response.
 (function(root){
+ const Chassis=typeof module!=='undefined'&&module.exports?require('./chassis-response'):root.ChassisResponse;
+ const LegacyChassis=typeof module!=='undefined'&&module.exports?require('./legacy-chassis-response'):root.LegacyChassisResponse;
+ const Context=typeof module!=='undefined'&&module.exports?require('./telemetry-context'):root.TelemetryContext;
  const finite=Number.isFinite,clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
  const smooth=v=>{v=clamp(v);return v*v*(3-2*v);};
  const WINDOW_MS=100,VERSION='lateral-state-v3',K_SCALE=.16,A_SCALE=.14;
@@ -30,19 +33,36 @@
    gain:clamp(elasticity),margin:clamp(elasticity),overrun:elasticity<0?weight*(-elasticity)/(1-elasticity):0};
  }
  class Estimator {
-  constructor(){this.reset();}
-  reset(){this.history=Array.from({length:4},()=>[]);this.steeringHistory=[];this.last=null;}
-  pause(){this.reset();}snapshot(){return {version:VERSION};}restore(){this.reset();}
+  constructor(){this.body=new Chassis.Observer();this.legacyBody=new LegacyChassis.Observer();this.bodyProfile=null;this.reset();}
+  reset(){this.body?.resetTransient();this.legacyBody?.resetTransient();this.history=Array.from({length:4},()=>[]);this.steeringHistory=[];this.lateralResponse=Array(4).fill(null);this.last=null;}
+  pause(){this.reset();this.body?.reset();this.legacyBody?.reset();this.bodyProfile=null;}snapshot(){return {version:VERSION};}restore(){this.reset();}
   update(s,now,unloaded,steering,loadKnown){
    if(this.last!==null&&(now<=this.last||now-this.last>WINDOW_MS))this.reset();this.last=now;
    const g=s.game,speed=Math.abs(g.speedKmh||0)/3.6,rest=speed===0,motion=smooth(speed/3),loadAt=i=>Array.isArray(loadKnown)?!!loadKnown[i]:!!loadKnown;
+   // Versioned input contract supplied by an adapter, never inferred from a game name.
+   // Existing streams retain the exact pre-DeepSeek observer; the adaptive
+   // profile adds learned steering geometry without changing native tyre paths.
+   const profile=g.capabilities?.kinematicsProfile==='adaptive-steering-v1'?'adaptive-steering-v1':'neutral-v15';
+   if(profile!==this.bodyProfile){this.body.reset();this.legacyBody.reset();this.bodyProfile=profile;}
+   const vehicle=(profile==='adaptive-steering-v1'?this.body:this.legacyBody).update(g,now);
    const roadAngle=finite(steering?.wheel)?steering.wheel*Math.PI/180:null;
    this.steeringHistory=this.steeringHistory.filter(p=>now-p.time<=WINDOW_MS);
    if(roadAngle!==null)this.steeringHistory.push({time:now,angle:roadAngle});else this.steeringHistory=[];
    const steerRate=rate(this.steeringHistory,'angle'),coupling=finite(steering?.wheelbase)&&steering.wheelbase>1?clamp((speed*.1/steering.wheelbase)**2):0,steeringLead=-clamp(steerRate,-2,2)*.1*coupling*.35;
+   // Body sideslip is a shared observation, never a fabricated per-wheel angle.
+   let bodyAngle=null;
+   if(g.wheels.some(w=>!finite(w.angle))){
+    const velocity=g.localVelocity;let right=null,forward=null;
+    if(Array.isArray(velocity)&&velocity.length===3&&velocity.every(finite)){right=velocity[0];forward=velocity[2];}
+    else if(Array.isArray(g.velocity)&&g.velocity.length===3&&g.velocity.every(finite)){
+     const basis=Context?.roadBasis(g);
+     if(basis){right=g.velocity.reduce((sum,v,i)=>sum+v*basis.right[i],0);forward=g.velocity.reduce((sum,v,i)=>sum+v*basis.forward[i],0);}
+    }
+    if(finite(right)&&finite(forward)&&Math.abs(forward)>=3)bodyAngle=Math.atan2(right,Math.abs(forward));
+   }
    const wheels=g.wheels.map((w,i)=>{
     const contact=loadAt(i)&&finite(w.load)&&w.load>=40,hasRatio=finite(w.ratio),hasAngle=finite(w.angle),physical=hasRatio||hasAngle,feedback=finite(w.slipFeedback)||finite(w.lockFeedback),valid=physical||feedback;
-    if(!valid||unloaded[i]||loadAt(i)&&!contact){this.history[i]=[];return {available:valid,unloaded:!!unloaded[i]||loadAt(i)&&w.load<40,remaining:0,projectedRemaining:0,directions:{},axisResponses:[],overrun:0,confidence:0,pressure:0,trend:0,method:'unloaded-or-missing'};}
+    if((!valid&&bodyAngle===null)||unloaded[i]||loadAt(i)&&!contact){this.history[i]=[];return {available:valid,unloaded:!!unloaded[i]||loadAt(i)&&w.load<40,remaining:0,projectedRemaining:0,directions:{},axisResponses:[],overrun:0,confidence:0,pressure:0,trend:0,method:'unloaded-or-missing'};}
     const k=hasRatio?w.ratio:null,a=hasAngle?Math.tan(clamp(w.angle,-Math.PI/2+.001,Math.PI/2-.001)):null,hasFx=contact&&finite(w.fx),hasFy=contact&&finite(w.fy);
     const p={time:now,k,a,load:w.load,qx:hasFx?Math.abs(w.fx)/w.load:0,qy:hasFy?Math.abs(w.fy)/w.load:0,sx:hasFx?w.fx/w.load:null,sy:hasFy?w.fy/w.load:null,forceXObserved:hasFx,forceYObserved:hasFy};
     let rows=this.history[i];if(rows.length){const old=rows.at(-1);if(w.load/old.load<.8||w.load/old.load>1.25||(k||0)*(old.k||0)<-.0001||(a||0)*(old.a||0)<-.0001)rows=[];}
@@ -71,6 +91,25 @@
       estimate:{value:point,low:point,high:current,evidence,otherEvidence:0,responseGain:fit?.gain??null,kind:fit?'directional-incremental-response':'directional-slip-trend'},danger:known?1-point:0,
       phase:rest?'rest':!known?'missing':v*(lateral?aRate:kRate)<-.0002?'recovering':v*(lateral?aRate:kRate)>.0002?'growing':'steady',mode:lateral?'turning':k<0?'braking':k>0?'drive':'rolling'};
     }
+    if(hasAngle){
+     directions.lateral.source='wheel-slip-angle';
+     const fit=axisResponses.find(r=>r.axis==='lateral');let observed=this.lateralResponse[i];
+     if(fit&&fit.weight>.12){observed={gain:clamp(fit.gain),angle:w.angle,load:w.load,speed,weight:fit.weight};this.lateralResponse[i]=observed;}
+     else if(observed&&(w.angle*observed.angle<=0||Math.abs(w.angle)<Math.abs(observed.angle)*.9||Math.abs(w.load-observed.load)>Math.max(100,observed.load*.15)||Math.abs(speed-observed.speed)>Math.max(1.5,observed.speed*.1))){observed=null;this.lateralResponse[i]=null;}
+     if(observed){
+      const d=directions.lateral;d.slipState=d.current;d.current=Math.min(d.current,observed.gain);d.danger=Math.max(d.danger,1-d.current);d.estimate={...d.estimate,value:d.current,evidence:observed.weight,kind:'observed-lateral-response'};
+     }
+    }
+    else if(bodyAngle!==null){
+     const slipState=1-motion*(1-Math.exp(-((Math.tan(bodyAngle)/A_SCALE)**2)));
+     const response=i<2?vehicle.frontRemaining:vehicle.rearRemaining;
+     // A small body angle alone cannot certify spare front/rear response.
+     const current=Number.isFinite(response)?Math.min(slipState,response):slipState<.3?slipState:null;
+     directions.lateral={available:true,current,slipState,forecast:current,danger:current===null?0:1-current,source:Number.isFinite(response)?'vehicle-steering-response':'body-sideslip',shared:true,estimate:{value:current,evidence:vehicle.confidence,kind:Number.isFinite(response)?'observed-vehicle-response':'uncalibrated-body-slip'}};
+    }
+    if(hasAngle){const response=i<2?vehicle.frontRemaining:vehicle.rearRemaining;const d=directions.lateral;
+     if(Number.isFinite(response)&&vehicle.confidence>=.3){d.slipState??=d.current;d.current=Math.min(d.current,response);d.danger=Math.max(d.danger,1-d.current);d.estimate={...d.estimate,value:d.current,vehicleEvidence:vehicle.confidence};}
+    }
     const overrun=Math.max(0,...axisResponses.map(r=>r.overrun)),lateralNow=hasAngle?1-Math.exp(-((a/A_SCALE)**2)):0,lateralFuture=hasAngle?1-Math.exp(-(((a+aLead)/A_SCALE)**2)):0;
     return {available:true,unloaded:false,remaining,projectedRemaining,directions,axisResponses,overrun,lateralNow,lateralFuture,aRate,kRate,steeringLead:commandedLead,confidence:Math.max(0,...axisResponses.map(r=>r.weight)),pressure:1-proxy,trend:0,
      method:axisResponses.length?'separate-current-and-response':'instant-slip-state',localWeight:0,elasticity:null,spanMs:now-rows[0].time,
@@ -82,10 +121,10 @@
     axles[axle?'rear':'front']={available:ws.every((w,j)=>w.available||unloaded[axle*2+j]||loadAt(axle*2+j)&&g.wheels[axle*2+j].load<40),sides:ws.map(w=>({available:w.available,unloaded:w.unloaded,value:w.projectedRemaining??0,current:w.remaining,overrun:w.overrun||0,directions:w.directions})),
      overrun:live.reduce((n,w)=>n+w.overrun,0)/2,currentReserve:{value:current},reserve:{value,low:value,high:current},rawReserve:{value},forecastDrop:current-value,support:live.length/2,unloadedSides:ws.map(w=>w.unloaded),loadKnown:loadAt(axle*2)&&loadAt(axle*2+1),responseObserved:live.some(w=>w.axisResponses.some(r=>r.weight>.01)),methods:live.map(w=>w.method),reason:!live.length?'unloaded':rest?'low-speed':live.length<2?'single-wheel':'realtime'};
    }
-   const level=start=>{const ws=wheels.slice(start,start+2).filter(w=>w.available&&!w.unloaded);return ws.length?ws.reduce((n,w)=>n+Math.max(w.lateralNow,w.lateralFuture*.65),0)/ws.length:0;};
-   const frontTendency=clamp((level(0)-.08)/.72),rearTendency=clamp((level(2)-.08)/.72);
+   const level=start=>{const ws=wheels.slice(start,start+2).filter(w=>w.available&&!w.unloaded&&finite(w.angle));return ws.length?ws.reduce((n,w)=>n+Math.max(w.lateralNow,w.lateralFuture*.65,w.directions.lateral.estimate?.kind==='observed-lateral-response'?1-w.directions.lateral.current:0),0)/ws.length:null;};
+   const frontLevel=level(0),rearLevel=level(2),frontTendency=frontLevel===null?null:clamp((frontLevel-.08)/.72),rearTendency=rearLevel===null?null:clamp((rearLevel-.08)/.72),bothKnown=frontLevel!==null&&rearLevel!==null;
    const front=wheels.slice(0,2).filter(w=>w.available&&!w.unloaded&&finite(w.angle)),sum=front.reduce((n,w)=>n+w.load,0),signed=sum?front.reduce((n,w)=>n-w.angle*w.load,0)/sum:0;
-   const needle=rest?clamp((steering?.delta||0)/30,-1,1):clamp((rearTendency-frontTendency)*1.4,-1,1),sensitivityGPerDegree=roadAngle!==null&&finite(steering?.wheelbase)&&steering.wheelbase>1?speed*speed/(steering.wheelbase*9.80665)*Math.PI/180/(Math.cos(roadAngle)**2):null;
+   const needle=rest?clamp((steering?.delta||0)/30,-1,1):bothKnown?clamp((rearTendency-frontTendency)*1.4,-1,1):0,sensitivityGPerDegree=roadAngle!==null&&finite(steering?.wheelbase)&&steering.wheelbase>1?speed*speed/(steering.wheelbase*9.80665)*Math.PI/180/(Math.cos(roadAngle)**2):null;
    const active=motion>0;
    const pedal=(ws,input)=>{
     if(!finite(input)||input<=0||!ws.length||motion===0)return null;
@@ -98,9 +137,9 @@
     });
     const severity=Math.max(0,...evidence.map(e=>e.strength));return severity>0?{label:'',mode:'risk-trend',severity,overrun:Math.max(0,...ws.map(w=>w.overrun||0)),source:VERSION,evidence}:null;
    };
-   const steeringState={front:frontTendency,rear:rearTendency,sensitivityGPerDegree,sensitivity:sensitivityGPerDegree===null?0:clamp(sensitivityGPerDegree/2),both:Math.min(frontTendency,rearTendency)>.55,forecastMs:100,source:'current-lateral-slip-and-short-growth',headingSide:Math.sign(signed)};
+   const steeringState={front:frontTendency,rear:rearTendency,sensitivityGPerDegree,sensitivity:sensitivityGPerDegree===null?0:clamp(sensitivityGPerDegree/2),both:bothKnown&&Math.min(frontTendency,rearTendency)>.55,forecastMs:100,source:'current-lateral-slip-and-short-growth',headingSide:Math.sign(signed)};
    const driveWheels=wheels.filter(w=>w.available&&!w.unloaded&&w.positiveDrive),brakeWheels=wheels.filter((w,i)=>w.available&&!w.unloaded&&w.braking&&!(s.handbrake>1&&i>=2));
-   return {version:VERSION,available:wheels.some(w=>w.available),reserve:axles.front.reserve,axles,wheels,needle,steeringState,steeringPressure:front.length?front.reduce((n,w)=>n+w.lateralPressure,0)/front.length:0,easeSteering:false,indication:active&&frontTendency>0,gripLow:active&&frontTendency>.5,lift:false,brakeRelease:false,
+   return {vehicleResponse:vehicle,version:VERSION,available:wheels.some(w=>w.available),reserve:axles.front.reserve,axles,wheels,needle,steeringState,steeringPressure:front.length?front.reduce((n,w)=>n+w.lateralPressure,0)/front.length:0,easeSteering:false,indication:active&&frontTendency>0,gripLow:active&&frontTendency>.5,lift:false,brakeRelease:false,
     driveCue:pedal(driveWheels,g.gas),brakeCue:pedal(brakeWheels,g.brake),advisor:{method:VERSION,motion:{active,state:active?'moving':'low-speed'},reason:'separate-measurement-and-inference',windowMs:WINDOW_MS,steerRate,coupling,forecastMs:100},reason:rest?'low-speed':'realtime'};
   }
  }

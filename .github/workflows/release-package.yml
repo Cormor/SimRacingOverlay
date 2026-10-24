@@ -13,23 +13,33 @@ concurrency:
   cancel-in-progress: false
 jobs:
   package:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Download unchanged runtime from verified base release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p build/base
+          New-Item -ItemType Directory -Force build/base | Out-Null
           gh release download v1.0.1 --pattern SimRacingOverlay-1.0.1-Windows-x64.zip --dir build/base
-          python3 tools/runtime_from_release.py build/base/SimRacingOverlay-1.0.1-Windows-x64.zip a7e5825666aef4ba2bf07112e89ea5a9bb8612cf8d1cbb74a8f748baeca9bea1
+          python tools/runtime_from_release.py build/base/SimRacingOverlay-1.0.1-Windows-x64.zip a7e5825666aef4ba2bf07112e89ea5a9bb8612cf8d1cbb74a8f748baeca9bea1 --rebuild-native
+      - name: Build current native bridge and launcher
+        run: ./tools/build.ps1
+      - name: Verify layout and algorithms
+        run: |
+          node src/test_relative_layout.js
+          node src/verify_algorithm_baseline.js
+          ./tools/test-telemetry.ps1
       - name: Package sources and runtime
-        run: python3 tools/package.py
+        run: python tools/package.py
       - name: Upload complete package to draft release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ inputs.release_id }}
         run: |
-          python3 tools/upload_release.py
-          cat dist/SHA256SUMS.txt >> "$GITHUB_STEP_SUMMARY"
+          python tools/upload_release.py
+          Get-Content dist/SHA256SUMS.txt | Add-Content $env:GITHUB_STEP_SUMMARY

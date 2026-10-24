@@ -1,0 +1,76 @@
+{
+  "marker": "adaptive-steering-v1-20261024",
+  "createdAt": "2026-10-23T19:46:57.385692+00:00",
+  "files": {
+    "assist.js": "559e3bb86c4c3e725e3f9b91c32ac5e48eb7d4356426ccd9355940cce8f058f3",
+    "chassis-response.js": "54609954486fa036ab86a6e351edcd5ccb6c0342ef183d82ed66e9a8986ea7c2",
+    "legacy-chassis-response.js": "fe7cb18403322e4d4a4ee11c6f04cf719567ba66df49f006b06d11d48abed31b",
+    "realtime-response.js": "73fea9cde290b7d6d3452fe2fe602000f368f70a24f4aab3d5ab9983ee6221aa",
+    "grip.js": "2d2f879dff8d9c9b8383db280964ed926a1049f063a8e0890f61f58b65f9b6f2",
+    "handling.js": "e0edecd32ad2fda39e97bca9a89915567390f30c93476575cada07cf1774b52b",
+    "telemetry-context.js": "2a6152b54fc31236fdd3ba20135fc4f03415fcd620b5f15f3ada3ec4a8f8afc3",
+    "steering-advisor.js": "b3b9a4a1ae8145c0c4cd6ebcc8f8a5ad2aa8594b36d286695caded0569f9645c",
+    "reserve.js": "40a2e365df10606938edc096d725bfd1becf7ac2df33e1d9f824c69d882f1c87",
+    "tyre-response.js": "90478439fbfee25c3c02d199d115c21637b259c6fb8703234ed1403208f72503",
+    "suspension-contact.js": "98b0a5beade1f1f9c289cefc9093ccd5eb5889f92f47467148d31b7ccb3910a4",
+    "g-ball.js": "62729704bef3e05ae022c0e11be1353fcc1f85868d79ae27131afab24289d6a0",
+    "src/IRacingTelemetry.cs": "c86a949d80a300b23b7f5ac8cafd8595bf40d5a86a5b76ba68633ba44a660d61",
+    "src/NativeUdpTelemetry.cs": "aa9c38c219a0cbc1c9743934c517320957dfdd5d313fec44e67ee929faaa482e",
+    "src/NativeMotionTelemetry.cs": "648e1bcb01b61a51b398f8e1a920c35a3e651c6d725a6d04490a35eb6d3e2cb0",
+    "src/PhysicsTelemetry.cs": "2058aab6f3d5621d83224137fc7395036a63106fc38c7a15f1d68d4e2d9b4366",
+    "src/SimHubTelemetry.cs": "39926aaaeaa8abc1618fa6753249a3555f1ed865f2b95335a474a54dda03b706",
+    "src/TelemetrySourceSelection.cs": "e17518d7951a9bcf5430d4588f7ec1a2e7b60f677c87dc83a8d35a9de488ebaa"
+  },
+  "archive": "docs/baselines/adaptive-steering-v1-20261024.zip",
+  "archiveSha256": "0c4e4308e5f92b496cdc218599666001a010f16c541d82d529cfee0d37ae34b3",
+  "evidence": {
+    "baseline": "output/input-response-v15",
+    "reports": [
+      {
+        "name": "ACR real decoded session",
+        "file": "tmp/drive-session-20261019-194519/telemetry-decoded-v2.jsonl",
+        "frames": 2833,
+        "equal": true
+      },
+      {
+        "name": "ACR Peugeot 208 full live session",
+        "file": "tmp/drive-session-20261020-212109/telemetry.jsonl.gz",
+        "frames": 41080,
+        "equal": true
+      },
+      {
+        "name": "F1 25 captured native motion",
+        "file": "output/native-adaptive/normalized-live.jsonl",
+        "frames": 70,
+        "equal": true
+      },
+      {
+        "name": "F1 UDP missing-angle synthetic stress",
+        "frames": 600,
+        "equal": true
+      }
+    ],
+    "sourceNameIndependent": true
+  },
+  "normalizedFiles": {
+    "assist.js": "559e3bb86c4c3e725e3f9b91c32ac5e48eb7d4356426ccd9355940cce8f058f3",
+    "chassis-response.js": "54609954486fa036ab86a6e351edcd5ccb6c0342ef183d82ed66e9a8986ea7c2",
+    "legacy-chassis-response.js": "fe7cb18403322e4d4a4ee11c6f04cf719567ba66df49f006b06d11d48abed31b",
+    "realtime-response.js": "73fea9cde290b7d6d3452fe2fe602000f368f70a24f4aab3d5ab9983ee6221aa",
+    "grip.js": "2d2f879dff8d9c9b8383db280964ed926a1049f063a8e0890f61f58b65f9b6f2",
+    "handling.js": "e0edecd32ad2fda39e97bca9a89915567390f30c93476575cada07cf1774b52b",
+    "telemetry-context.js": "2a6152b54fc31236fdd3ba20135fc4f03415fcd620b5f15f3ada3ec4a8f8afc3",
+    "steering-advisor.js": "b3b9a4a1ae8145c0c4cd6ebcc8f8a5ad2aa8594b36d286695caded0569f9645c",
+    "reserve.js": "40a2e365df10606938edc096d725bfd1becf7ac2df33e1d9f824c69d882f1c87",
+    "tyre-response.js": "90478439fbfee25c3c02d199d115c21637b259c6fb8703234ed1403208f72503",
+    "suspension-contact.js": "98b0a5beade1f1f9c289cefc9093ccd5eb5889f92f47467148d31b7ccb3910a4",
+    "g-ball.js": "62729704bef3e05ae022c0e11be1353fcc1f85868d79ae27131afab24289d6a0",
+    "src/IRacingTelemetry.cs": "c86a949d80a300b23b7f5ac8cafd8595bf40d5a86a5b76ba68633ba44a660d61",
+    "src/NativeUdpTelemetry.cs": "aa9c38c219a0cbc1c9743934c517320957dfdd5d313fec44e67ee929faaa482e",
+    "src/NativeMotionTelemetry.cs": "648e1bcb01b61a51b398f8e1a920c35a3e651c6d725a6d04490a35eb6d3e2cb0",
+    "src/PhysicsTelemetry.cs": "2058aab6f3d5621d83224137fc7395036a63106fc38c7a15f1d68d4e2d9b4366",
+    "src/SimHubTelemetry.cs": "39926aaaeaa8abc1618fa6753249a3555f1ed865f2b95335a474a54dda03b706",
+    "src/TelemetrySourceSelection.cs": "e17518d7951a9bcf5430d4588f7ec1a2e7b60f677c87dc83a8d35a9de488ebaa"
+  },
+  "textNormalization": "CRLF to LF for cross-platform source identity"
+}
