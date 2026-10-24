@@ -29,3 +29,13 @@ python -m PyInstaller --clean --onefile --noconsole --name MozaLedObserver --dis
 在 Actions 中运行 **Package Windows release**，从当前提交构建桥接与启动器，再生成安装包并上传到指定草稿 Release。Electron、SharpDX、未变化的可选观察器及 SimHub 插件从校验过的基础包恢复；这些组件对应的源码须保持一致。修改过的原生 C# 组件在 Windows runner 上重新编译，`native-build.json` 将二进制与实际源码绑定。
 
 打包包含运行时、PNG 轮盘、仪表样式、相对屏幕的布局预设和完整源码。检查针对账号路径、账户标识、密码、密钥与令牌；可分享的样式和配置不会因“个人偏好”被排除。发布前应在干净解压目录运行 `Start.cmd`，确认默认文件自动生成、当前包的桥接启动、图片加载、画面可见和中下方布局。
+
+## 重新生成 README 展示图
+
+在仓库根目录使用包内 Electron 执行：
+
+```powershell
+.\runtime\electron\electron.exe .\tools\render-readme.cjs
+```
+
+生成器在隐藏的离屏窗口中加载实际界面，注入固定随机种子的模拟数值，再由 `OffscreenCanvas.convertToBlob` 导出 `docs/images/overview.png`、`states.png` 和 `flags.png`，不调用截图接口。状态分别触发，展示用数据组合了不同数据源支持的能力；不会连接设备、实时桥接或修改用户布局。生成记录保存在被 Git 忽略的 `build/readme-render`。
