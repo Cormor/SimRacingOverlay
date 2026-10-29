@@ -1,11 +1,12 @@
-const {app,BrowserWindow,screen,ipcMain,globalShortcut,Tray,Menu,nativeImage,shell}=require('electron');
+const {app,BrowserWindow,screen,ipcMain,globalShortcut,Tray,Menu,nativeImage,shell,net}=require('electron');
 const fs=require('node:fs'),path=require('node:path');
 const {execFile}=require('node:child_process');
 const root=__dirname,config=path.join(root,'runtime','desktop.json'),statusFile=path.join(root,'runtime','desktop-status.json');
 app.setPath('userData',path.join(root,'runtime','desktop-profile'));
 app.setName('SimRacingOverlay');
 const port=(()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'settings.json'),'utf8')).httpPort||18764;}catch{return 18764;}})();
-const wheelStore=require('./wheel-store').createStore({root,catalog:JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-catalog.json'),'utf8')),validate:require('./wheel-profile').validate});
+const {createStore,createElectronRequest}=require('./wheel-store');
+const wheelStore=createStore({request:createElectronRequest(net),root,catalog:JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-catalog.json'),'utf8')),validate:require('./wheel-profile').validate});
 const baseUrl='http://127.0.0.1:'+port+'/';
 if(!app.requestSingleInstanceLock()){app.quit();}else{
  let win,last='',timer,resize=null,move=null,tray,applying=false,suppressUntil=0,exiting=false,exitPrepared=false,displayPixels=null,pixelDisplayId=null,displaySyncBusy=false;

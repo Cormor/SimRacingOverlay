@@ -24,7 +24,7 @@
 
 在 [Releases](https://github.com/Cormor/SimRacingOverlay/releases) 下载 **Windows-x64.zip**，不要下载 GitHub 自动生成的 Source code 压缩包。
 
-1. 下载 **SimRacingOverlay-1.3.0-Windows-x64.zip**，解压到普通可写目录，双击 **Start.cmd** 即可启动。运行时和资源已包含，无需安装 Python、Node.js 或开发环境。
+1. 下载 **SimRacingOverlay-1.3.1-Windows-x64.zip**，解压到普通可写目录，双击 **Start.cmd** 即可启动。运行时和资源已包含，无需安装 Python、Node.js 或开发环境。
 2. 默认布局水平居中、距屏幕下边缘 2%，大小按屏幕高度自动适配。支持 720p、1080p、1440p、4K、8K 和不同 Windows 缩放；各模块的尺寸比例与相对位置保持一致。
 3. 按 **Ctrl+Alt+M** 编辑布局；需要调整方向盘总转向角、独立踏板或按钮时，打开 **Setup.ps1**。设备映射保存在本机，不随共享预设分发。
 4. iRacing SDK 和 ACR 原生共享内存会自动读取；F1 25 的 UDP 设置见下方接入说明。没有游戏遥测时，仍可显示设备输入并编辑布局。

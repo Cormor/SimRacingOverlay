@@ -28,6 +28,8 @@ SIMAGIC 下载款使用[速魔官方产品页](https://simagic.com/products/gt-p
 
 `wheel-profile.js` 定义数据格式、布局设置、映射与屏幕转速灯；`wheel-store.js` 负责固定清单下载及缓存。`assets/wheel-catalog.json` 记录名称、Release 资产地址和 SHA-256。新增盘面在 `wheel-packs/<id>/` 维护可追溯来源、几何与 `profile.json`，由 `tools/package.py` 生成独立的 `<id>.wheel.json` Release 资产。主程序包排除盘面缓存和这些可选素材，默认只有原款。
 
+Windows编辑器通过Electron系统网络通道下载，沿用系统代理配置；每次跳转仍由盘面下载模块单独校验。
+
 数据包仅包含 PNG 和经过校验的几何、输入映射、仪表位置数据，不执行包内代码。图片统一为 1315×1197，使用明确的轴心与校正比例。下载限制为 8 MiB、20 秒和 4 次 HTTPS 跳转，核对清单 ID 与原始字节哈希后原子保存；同一盘面的重复下载合并，失败保留已有文件。
 
 修改时运行：

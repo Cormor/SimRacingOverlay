@@ -33,6 +33,7 @@ jobs:
         run: |
           node src/test_wheel_profiles.js
           node src/test_wheel_store.js
+          node src/test_electron_wheel_transport.js
           node src/test_layout_editor.js
           node src/test_relative_layout.js
           node src/test_dashboard_cache.js

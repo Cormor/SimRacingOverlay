@@ -135,4 +135,39 @@ function createStore({root,catalog,validate,request}={}){
  return {install,list,read};
 }
 
-module.exports={createStore};
+// Bridge Chromium's proxy-aware transport into the same bounded, per-hop downloader.
+// Creating this factory is safe before app.ready; net.request runs only on install.
+function createElectronRequest(net){
+ if(typeof net?.request!=='function')throw Error('Electron网络接口无效');
+ return (url,options,callback)=>{
+  const {EventEmitter}=require('node:events'),{PassThrough}=require('node:stream');
+  const handle=new EventEmitter();let stopped=false,response=null;
+  const request=net.request({url:String(url),method:'GET',redirect:'manual',credentials:'omit',useSessionCookies:false});
+  handle.destroy=()=>{if(stopped)return;stopped=true;response?.destroy();request.abort();};
+  request.on('error',error=>{if(!stopped)handle.emit('error',error);});
+  request.on('redirect',(status,_method,next)=>{
+   if(stopped)return;stopped=true;
+   const redirect=new PassThrough();redirect.statusCode=status;redirect.headers={location:next};
+   // Never follow here: the store validates the destination and opens the next hop.
+   try{callback(redirect);}finally{request.abort();}
+  });
+  request.on('response',incoming=>{
+   if(stopped)return;
+   response=new PassThrough();response.statusCode=incoming.statusCode;response.headers=incoming.headers;
+   response.on('close',()=>{if(!response.complete)handle.destroy();});
+   incoming.on('end',()=>{if(!stopped){response.complete=true;response.end();}});
+   incoming.on('error',error=>{if(!stopped)response.destroy(error);});
+   incoming.on('aborted',()=>{if(!stopped)response.emit('aborted');});
+   incoming.on('close',()=>{if(!stopped&&!response.complete)response.destroy(Error('盘面下载连接已关闭'));});
+   callback(response);
+   incoming.on('data',chunk=>{if(!stopped)response.write(chunk);});
+  });
+  // In the shipped runtime ClientRequest's Writable close follows finish, before headers.
+  // Response close/error and the store's total deadline own network completion.
+  request.on('abort',()=>{if(!stopped)handle.emit('error',Error('盘面下载已取消'));});
+  for(const [key,value] of Object.entries(options.headers||{}))request.setHeader(key,value);
+  request.end();return handle;
+ };
+}
+
+module.exports={createStore,createElectronRequest};
