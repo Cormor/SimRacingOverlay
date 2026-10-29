@@ -139,10 +139,14 @@ function waitingBadge(waiting){
  text('待数据',500,283,UI.sizes.secondary,'#d9e4ef');
 }
 function buttonCap(c,color,ambient=false){
+ // The optional photo has transparent cutouts beside its lower buttons.
+ // Keep light and shadow inside the physical bezel rather than emitting into a hole.
+ const clipped=activeFace.id!=='default';if(clipped){ctx.save();ctx.beginPath();ctx.arc(c.x,c.y,c.r+3,0,Math.PI*2);ctx.clip();}
  const glow=emittedColor(color),base=ctx.createRadialGradient(c.x-8,c.y-10,2,c.x,c.y,c.r);base.addColorStop(0,'#38434f');base.addColorStop(1,'#121922');
  circle(c.x,c.y,c.r+2,'#090d12','#536170',2);circle(c.x,c.y,c.r,base,'#0a0e14',3);
  if(glow){ctx.save();ctx.shadowColor=glow;ctx.shadowBlur=(ambient?16:8)*paintScale;circle(c.x,c.y,c.r-3,glow,'#ffffff44',1.5);ctx.restore();}
  else{ctx.beginPath();ctx.arc(c.x,c.y,c.r-4,Math.PI*1.12,Math.PI*1.82);ctx.strokeStyle='#6d798777';ctx.lineWidth=2;ctx.stroke();}
+ if(clipped)ctx.restore();
 }
 function bar(x,value,color,label,online){online=online&&Number.isFinite(value);const y=230,h=440,w=38;ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle='#07090d';ctx.fillStyle='#20252de0';ctx.beginPath();ctx.roundRect(x-w/2,y,w,h,12);ctx.fill();ctx.stroke();if(online){ctx.save();ctx.beginPath();ctx.roundRect(x-w/2+5,y+5,w-10,h-10,8);ctx.clip();ctx.fillStyle=color;const fill=(h-10)*Math.max(0,Math.min(100,value))/100;if(fill>0){ctx.beginPath();ctx.roundRect(x-w/2+5,y+h-5-fill,w-10,fill,Math.min(8,fill/2));ctx.fill();}ctx.restore();}text(label,x,y-43,UI.sizes.value||32);text(online?`${Math.round(value).toString().padStart(3,' ')}%`:'—',x,y+h+40,UI.sizes.value);}
 function statuses(s,online,advance=true){
@@ -429,9 +433,9 @@ function prepareScene(now){
  }else uiInfo.rpmLightSource=activeFace.id==='default'&&online&&led.available===true?'observed-device':'unavailable';
  if(uiInfo.rpmLightSource==='unavailable'||s.game?.paused||s.game?.inMenu)led={...led,rpm:[]};
  if(typeof WheelProfiles!=='undefined')led={...led,rpm:WheelProfiles.resample(led.rpm,ledShapes.length)};
- const knobPaint=encoders.map(e=>{
-  const n=e.led-8,rawColor=(led.knobs||[])[n],ambient=!(activeFace.id==='default'&&online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
-  const color=ambient?ambientButtonColor(e,now,ambientAlert):emittedColor(rawColor);
+ const knobPaint=encoders.map((e,index)=>{
+  const n=e.led===undefined?index:e.led-8,rawColor=(led.knobs||[])[n],ambient=e.led!==undefined&&!(activeFace.id==='default'&&online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
+  const color=e.led===undefined?null:ambient?ambientButtonColor(e,now,ambientAlert):emittedColor(rawColor);
   if(activeFace.id==='default'&&Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;
   else if(Number.isInteger(e.first)){for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;}else knobPositions[n]=null;
   return {e,n,color,ambient};
@@ -444,12 +448,12 @@ function prepareScene(now){
  if(activeFace.id==='default'&&image.complete&&image.naturalWidth)centreStripe();
  if(window.DashRenderer&&activeFace.dashboard&&wheelSettings.dashboardMode==='auto')ctx.drawImage(DashRenderer.render(dashboardState,Number(params.get('page')||1)),...activeFace.dashboard);
  // Shapes measured from the original wheel image: 3 brow + 10 centre + 3 brow.
- for(const shape of ledShapes){const points=shape.points,light=emittedColor((led.rpm||[])[shape.led]);ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.lineJoin='round';ctx.lineWidth=7;ctx.strokeStyle='#171b20';ctx.fillStyle='#11171e';ctx.stroke();ctx.fill();
+ for(const shape of ledShapes){const points=shape.points,light=emittedColor((led.rpm||[])[shape.led]);ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.lineJoin='round';ctx.lineWidth=activeFace.ledStroke??7;ctx.strokeStyle='#171b20';ctx.fillStyle='#11171e';ctx.stroke();ctx.fill();
   if(light){ctx.fillStyle=light;ctx.fill();}ctx.lineWidth=1.3;ctx.strokeStyle=light?'#d9e5eb55':'#53617088';ctx.stroke();
  }
  for(const c of controls){if(c.led!==undefined)buttonCap(c,liveButtonLights?(led.buttons||[])[c.led]:ambientButtonColor(c,now,ambientAlert),!liveButtonLights);const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;if(c.id===mappingHighlight||c.b.some(b=>pressed.has(b))||axisValue>1){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
  for(const {e,n,color,ambient} of knobPaint){
-  if(activeFace.id!=='default'){if(color)circle(e.x,e.y,e.r,'#ffffff00',color,3);if(e.id===mappingHighlight||e.b.some(b=>pressed.has(b)))circle(e.x,e.y,e.r+8,'#ffffff00','#ffdc48',4);continue;}
+  if(activeFace.id!=='default'){if(color&&e.lightPoints){ctx.save();ctx.beginPath();ctx.moveTo(...e.lightPoints[0]);for(const point of e.lightPoints.slice(1))ctx.lineTo(...point);ctx.closePath();ctx.globalAlpha=.38;ctx.fillStyle=color;ctx.fill();ctx.restore();}if(e.id===mappingHighlight||e.b.some(b=>pressed.has(b)))circle(e.x,e.y,e.r+8,'#ffffff00','#ffdc48',4);continue;}
   // Concentric graphite bezel, fine detent marks and one selected sector.
   circle(e.x,e.y,69,'#0b1017','#778493',2);circle(e.x,e.y,64,'#202a36','#05090e',3);
   for(let i=0;i<12;i++){const a=i*Math.PI/6-Math.PI/2,selected=i===knobPositions[n];ctx.beginPath();ctx.arc(e.x,e.y,53,a+.045,a+Math.PI/6-.045);ctx.lineWidth=selected?17:10;ctx.strokeStyle=selected?(color||'#d8e5ee'):'#344150';ctx.stroke();

@@ -20,6 +20,7 @@
    check(typeof c.label==='string'&&c.label.length<=60&&finite(c.x,0,1315)&&finite(c.y,0,1197)&&finite(c.r??35,5,90),'控件位置无效');
    const out={id:c.id,label:c.label,x:c.x,y:c.y,r:c.r??35,b:buttons(c.b)};
    if(c.led!==undefined){check(Number.isInteger(c.led)&&c.led>=(encoder?8:0)&&c.led<=(encoder?11:7),'按键灯索引无效');out.led=c.led;}
+   if(encoder&&c.lightPoints!==undefined){check(c.led!==undefined&&Array.isArray(c.lightPoints)&&c.lightPoints.length>=3&&c.lightPoints.length<=64&&c.lightPoints.every(v=>Array.isArray(v)&&v.length===2&&finite(v[0],0,1315)&&finite(v[1],0,1197)),'旋钮灯位置无效');out.lightPoints=c.lightPoints.map(v=>v.slice());}
    if(encoder&&c.first!==undefined){check(Number.isInteger(c.first)&&c.first>=1&&c.first<=501,'旋钮编号无效');out.first=c.first;}
    return out;
   }
@@ -27,8 +28,9 @@
   const controls=p.controls.map(c=>control(c)),encoders=p.encoders.map(c=>control(c,true));
   check(Array.isArray(p.ledShapes)&&p.ledShapes.length<=32,'转速灯数量无效');
   const ledShapes=p.ledShapes.map((s,i)=>{check(s.led===i&&Array.isArray(s.points)&&s.points.length>=3&&s.points.length<=64&&s.points.every(v=>Array.isArray(v)&&v.length===2&&finite(v[0],0,1315)&&finite(v[1],0,1197)),'转速灯位置无效');return {led:i,points:s.points.map(v=>v.slice())};});
+  check(p.ledStroke===undefined||finite(p.ledStroke,.5,8),'转速灯描边无效');
   check(p.dashboard===null||Array.isArray(p.dashboard)&&p.dashboard.length===4&&p.dashboard.every((v,i)=>finite(v,i<2?0:1,i%2===0?1315:1197)),'仪表位置无效');
-  return {schemaVersion:1,id:p.id,name:p.name,size:[1315,1197],center:[655,602.5],calibration:p.calibration.slice(),image:p.image,controls,encoders,ledShapes,dashboard:p.dashboard?.slice()??null};
+  return {schemaVersion:1,id:p.id,name:p.name,size:[1315,1197],center:[655,602.5],calibration:p.calibration.slice(),image:p.image,controls,encoders,ledShapes,ledStroke:p.ledStroke??7,dashboard:p.dashboard?.slice()??null};
  }
  function settings(input){
   const out={faceId:typeof input?.faceId==='string'&&ID.test(input.faceId)?input.faceId:'default',dashboardMode:['auto','separate','hidden'].includes(input?.dashboardMode)?input.dashboardMode:'auto',buttonMaps:{}};

@@ -28,7 +28,7 @@
  <div class="toolbar"><button id="downloadFace" disabled>下载所选盘面</button></div>
  <p id="wheelStatus" class="hint" role="status">新盘面可从 GitHub 下载，下载后可离线使用。</p>
  <label>仪表显示 <select id="dashboardMode" aria-label="仪表显示"><option value="auto">跟随盘面（有屏才显示）</option><option value="separate">独立显示，可单独移动</option><option value="hidden">隐藏仪表</option></select></label>
- <details><summary>此盘面的按键映射</summary><p class="hint">输入按钮编号，以逗号分隔；留空可清除映射。指向一行可查看盘面位置；点击“录入”后按一下设备按键。</p><div id="buttonMaps"></div><p id="inputButtons" class="hint"></p><button id="resetButtonMaps">恢复此盘面默认映射</button></details>
+ <details><summary>此盘面的按键映射</summary><p class="hint">已预置此盘面的默认编号，可用逗号分隔覆盖；留空清除映射。指向一行可查看盘面位置；点击“录入”后按一下设备按键。</p><div id="buttonMaps"></div><p id="inputButtons" class="hint"></p><button id="resetButtonMaps">恢复此盘面默认映射</button></details>
  </details>
  <div class="sectionTitle">模块 <span>选择 / 显示 / 锁定</span></div><div id="modules" role="group" aria-label="模块列表"></div>
  <div id="selectionTitle" class="sectionTitle">未选择模块</div>

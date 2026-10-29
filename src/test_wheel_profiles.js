@@ -3,6 +3,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('nod
 const P=require('../wheel-profile'),L=require('../layout');
 const pack=JSON.parse(fs.readFileSync(path.join(__dirname,'../wheel-packs/simagic-gt-pro-round/profile.json')));
 const face=P.validate(pack);
+assert.deepEqual(Buffer.from(pack.image.slice(22),'base64'),fs.readFileSync(path.join(__dirname,'../wheel-packs/simagic-gt-pro-round/wheel.png')));
+assert.deepEqual(face.controls.slice(0,8).map(v=>v.b),[[7],[8],[6],[5],[1],[2],[4],[3]]);
+assert.deepEqual(face.encoders.map(v=>v.b),[[33,34],[35,36],[11,12],[9,10]]);
+assert.equal(face.controls.find(v=>v.id==='funky-left').b.length,7);
 assert.equal(face.dashboard,null);assert.equal(face.ledShapes.length,9);assert.equal(face.controls.filter(c=>c.led!==undefined).length,8);
 for(const field of ['schemaVersion','id','image','calibration','ledShapes']){const bad={...pack,[field]:null};assert.throws(()=>P.validate(bad));}
 assert.throws(()=>P.validate({...pack,image:pack.image.replace('image/png','image/svg+xml')}));
@@ -16,8 +20,8 @@ const changed=L.clean({...legacy,wheel:{faceId:face.id,dashboardMode:'separate',
 assert.deepEqual(changed.controls.wheel,legacy.controls.wheel);assert.equal(changed.controls.dashboard.enabled,true);assert.deepEqual(L.clean(changed),changed);
 assert.equal(L.clean({...changed,wheel:{...changed.wheel,dashboardMode:'hidden'}}).controls.dashboard.enabled,false);
 const mapped=P.mapControls(face,changed.wheel.buttonMaps[face.id],Array(30).fill(19));
-assert.deepEqual(mapped[0].b,[42]);assert.deepEqual(mapped[1].b,[]);assert.deepEqual(face.controls[0].b,[]);
-assert.deepEqual(P.mapControls(face,{},Array(30).fill(19))[0].b,[],'clearing overrides cannot leak old wheel mapping');
+assert.deepEqual(mapped[0].b,[42]);assert.deepEqual(mapped[1].b,face.controls[1].b);assert.deepEqual(face.controls[0].b,[7]);
+assert.deepEqual(P.mapControls(face,{},Array(30).fill(19))[0].b,face.controls[0].b,'clearing overrides cannot leak old wheel mapping');
 assert.deepEqual(P.resample(Array.from({length:16},(_,i)=>i),9),[0,2,4,6,8,9,11,13,15]);assert.deepEqual(P.resample([0,1],1),[1]);
 const lights=P.shiftColors({available:true,rpm:8000,maxRpm:8000},1000,9);assert.equal(lights.colors.length,9);assert(lights.colors.every(c=>c!=='#11171e'));
 for(const state of [{available:false},{available:true,paused:true,rpm:8000,maxRpm:8000},{available:true,inMenu:true,rpm:8000,maxRpm:8000},{available:true}])assert.equal(P.shiftColors(state,1000,9),null);
@@ -34,7 +38,7 @@ const run=s=>vm.runInContext(s,scope);
 (async()=>{
  const selected=await scope.WheelFaces.select(face.id);assert.equal(selected.ok,true);assert.equal(scope.WheelFaces.get().id,face.id);assert.equal(scope.OverlayLayout.get().wheel.faceId,face.id);
  run('const input=OverlayLayout.get();input.wheel.buttonMaps[input.wheel.faceId]={"button-1":[42]};OverlayLayout.set(input);overlayDiagnostics.setTestState({connected:true,buttons:[42],inputProfile:{buttonMap:Array(30).fill(19)}},1000);overlayDiagnostics.renderTest(1000)');
- assert.deepEqual(Array.from(scope.overlayDiagnostics.controls[0].b),[42]);assert.deepEqual(Array.from(scope.overlayDiagnostics.controls[1].b),[]);
+ assert.deepEqual(Array.from(scope.overlayDiagnostics.controls[0].b),[42]);assert.deepEqual(Array.from(scope.overlayDiagnostics.controls[1].b),face.controls[1].b);
  await scope.WheelFaces.select('default');assert.equal(scope.OverlayLayout.get().wheel.faceId,'default');
  // A slow new face cannot replace a later choice of the cached original face.
  const other={...pack,id:'slow-face'};let resolve;deferred=new Promise(r=>{resolve=r;});const slow=scope.WheelFaces.select('slow-face');await scope.WheelFaces.select('default');resolve({ok:true,text:async()=>JSON.stringify(other)});await slow;deferred=null;
