@@ -1,8 +1,9 @@
 'use strict';
 (function(root){
  const preset=typeof module!=='undefined'&&module.exports?require('./layout-preset'):root.OverlayPreset;
+ const profiles=typeof module!=='undefined'&&module.exports?require('./wheel-profile'):root.WheelProfiles;
  const definitions=[
-  ['wheel','方向盘与仪表',[180,130,640,640],[125,108,750,682]],
+  ['wheel','方向盘盘面',[180,130,640,640],[125,108,750,682]],
   ['brake','刹车与辅助',[27,165,86,573]],['throttle','油门与辅助',[887,165,86,573]],
   ['slip0','左前轮滑移',[120,171,185,248]],['slip1','右前轮滑移',[695,171,185,248]],
   ['slip2','左后轮滑移',[120,521,185,248]],['slip3','右后轮滑移',[695,521,185,248]],
@@ -12,7 +13,8 @@
   ['rearLateral','后轴侧滑／估计侧偏角',[234,769,552,36],[245,770,510,34]],
   ['handling','推头／甩尾／侧摆',[390,30,220,80]],['decel','实际减速',[422,642,156,70]],
   ['handbrake','手刹',[434,499,132,107]],['statuses','ABS / TC / ESC',[265,800,470,48]],
-  ['gBall','G 力球',[426,343,175,160]],['flags','iRacing 旗语与解释',[370,-89,260,64]]
+  ['gBall','G 力球',[426,343,175,160]],['flags','iRacing 旗语与解释',[370,-89,260,64]],
+  ['dashboard','独立仪表',[370,210,260,83]]
  ].map(([id,label,bounds,legacy],z)=>({id,label,bounds,legacy:legacy||bounds,z}));
  const byId=new Map(definitions.map(d=>[d.id,d]));
  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),clone=v=>JSON.parse(JSON.stringify(v));
@@ -23,7 +25,7 @@
  function changed(){for(const fn of listeners)fn();}
  function onChange(fn){listeners.add(fn);return ()=>listeners.delete(fn);}
  function validStage(s){s=s||{};const n=(k,a,b,v)=>Number.isFinite(s[k])?clamp(s[k],a,b):v;return {width:n('width',320,16384,1000),height:n('height',200,16384,1000),originX:n('originX',-16000,16000,0),originY:n('originY',-16000,16000,110),scale:n('scale',.02,8,1),...Object.fromEntries(['pixelWidth','pixelHeight','monitorPixelWidth','monitorPixelHeight'].filter(k=>Number.isFinite(s[k])&&s[k]>0).map(k=>[k,Math.round(clamp(s[k],1,32768))]))};}
- function defaults(id){const d=byId.get(id),s=defaultScale(id),[x,y,w,h]=d.bounds,[lx,ly,lw,lh]=d.legacy;return {x:(lx+lw/2-x-w/2)*(1-s),y:(ly+lh/2-y-h/2)*(1-s),sx:s,sy:s,rotation:0,z:d.z,enabled:true,locked:false,opacity:1,textOpacity:1,imageOpacity:1,...(preset?.controls?.[id]||{})};}
+ function defaults(id){const d=byId.get(id),s=defaultScale(id),[x,y,w,h]=d.bounds,[lx,ly,lw,lh]=d.legacy;return {x:(lx+lw/2-x-w/2)*(1-s),y:(ly+lh/2-y-h/2)*(1-s),sx:s,sy:s,rotation:0,z:d.z,enabled:id!=='dashboard',locked:false,opacity:1,textOpacity:1,imageOpacity:1,...(preset?.controls?.[id]||{})};}
  function screenStage(width,height,placement=preset?.placement){
   const p=placement||{anchorX:.5,bottomRatio:.02,heightRatio:.43,edgeRatio:.02},value={controls:Object.fromEntries(definitions.map(d=>[d.id,defaults(d.id)]))},b=bounds(definitions.map(d=>d.id),value);
   const edge=clamp(Number.isFinite(p.edgeRatio)?p.edgeRatio:.02,0,.2),bottom=clamp(Number.isFinite(p.bottomRatio)?p.bottomRatio:.02,0,.4),anchor=clamp(Number.isFinite(p.anchorX)?p.anchorX:.5,0,1),heightRatio=clamp(Number.isFinite(p.heightRatio)?p.heightRatio:.43,.05,.95);
@@ -32,7 +34,7 @@
   return {width,height,originX:center-(b.x+b.w/2)*scale,originY:height*(1-bottom)-(b.y+b.h)*scale,scale};
  }
  function clean(input){
-  const out={version:3,stage:validStage(input?.stage||screenStage(1000,1000)),controls:{}};
+  const out={version:3,stage:validStage(input?.stage||screenStage(1000,1000)),controls:{},wheel:profiles?profiles.settings(input?.wheel):{faceId:'default',dashboardMode:'auto',buttonMaps:{}}};
   for(const d of definitions){const c=input?.controls?.[d.id],v=defaults(d.id);
    if(c){for(const k of ['x','y','sx','sy','rotation','z','opacity','textOpacity','imageOpacity'])if(Number.isFinite(c[k]))v[k]=c[k];v.enabled=c.enabled!==false;v.locked=c.locked===true;
     if((input.version||2)<3){const [x,y,w,h]=d.bounds,[lx,ly,lw,lh]=d.legacy;v.x=(Number.isFinite(c.x)?c.x:0)+(lx+lw/2-x-w/2)*(1-v.sx);v.y=(Number.isFinite(c.y)?c.y:0)+(ly+lh/2-y-h/2)*(1-v.sy);}
@@ -40,7 +42,9 @@
    v.x=clamp(v.x,-160000,160000);v.y=clamp(v.y,-160000,160000);v.sx=clamp(v.sx,.2,4);v.sy=clamp(v.sy,.2,4);v.rotation=((v.rotation+180)%360+360)%360-180;v.z=clamp(Math.round(v.z),-1000,1000);
    for(const k of ['opacity','textOpacity','imageOpacity'])v[k]=clamp(v[k],0,1);
    out.controls[d.id]=v;
-  }return out;
+  }
+  out.controls.dashboard.enabled=out.wheel.dashboardMode==='separate';
+  return out;
  }
  layout=clean(null);
  function stage(){return {...(desktopStage||layout.stage)};}

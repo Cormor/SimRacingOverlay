@@ -24,3 +24,9 @@
 - `legacy-chassis-response.js` 保留 v15 观察器。自适应版本仅由适配器提供的 `capabilities.kinematicsProfile=adaptive-steering-v1` 选择；不得按游戏字符串启停算法。旗语是用户明确限定的 iRacing SDK 协议功能。
 - 编辑器检查：`node src/test_layout_editor.js`、`node src/test_dashboard_cache.js`、`node src/test_render_clocks.js`；变更遥测后执行 `tools/test-telemetry.ps1`。算法维护先读 `docs/ALGORITHM-BASELINE.md`。
 - 根目录 CSS 是运行必需源码，打包需与 JS 一起收录；保留本树独立的遥测事件流与 worker 处理链路。
+
+## 方向盘盘面维护
+
+- 盘面格式、下载清单、独立仪表与验证入口见 `docs/WHEEL-FACES.md`。盘面是数据与PNG，不执行远端代码；按键定义按盘面独立保存，未知编号保持未映射。
+- 主程序默认仅内置原款，打包排除下载缓存及可选源素材，独立盘面作为Release资产分发。修改选择、导入、撤销或快照结构时，同时检查拖动取消、迟到读取/解码和初始清单恢复。
+- 发行开发使用独立工作树，保留本机研究树与stash。此工作树只负责1.3.0发行，不替换本地受控试车的Apps入口或配置。

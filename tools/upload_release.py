@@ -13,10 +13,11 @@ def call(url,method='GET',data=None,kind='application/json'):
         return json.loads(body) if body else None
 release=call(api+'/releases/'+str(release_id));version=(root/'VERSION').read_text().strip()
 assert release['draft'] and release['tag_name']=='v'+version,'Target must be the matching draft release'
-for name in ['SimRacingOverlay-'+version+'-Windows-x64.zip','SHA256SUMS.txt']:
+names=['SimRacingOverlay-'+version+'-Windows-x64.zip','SHA256SUMS.txt']+[face['id']+'.wheel.json' for face in json.loads((root/'assets/wheel-catalog.json').read_text(encoding='utf-8'))]
+for name in names:
     data=(root/'dist'/name).read_bytes();digest='sha256:'+hashlib.sha256(data).hexdigest()
     for old in release['assets']:
         if old['name']==name:call(api+'/releases/assets/'+str(old['id']),'DELETE')
-    asset=call(release['upload_url'].split('{')[0]+'?name='+name,'POST',data,'application/zip' if name.endswith('.zip') else 'text/plain')
+    asset=call(release['upload_url'].split('{')[0]+'?name='+name,'POST',data,'application/zip' if name.endswith('.zip') else 'application/json' if name.endswith('.json') else 'text/plain')
     assert asset['state']=='uploaded' and asset['size']==len(data) and asset['digest']==digest
     print('Uploaded and verified:',name,digest,flush=True)

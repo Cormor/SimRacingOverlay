@@ -31,7 +31,12 @@ jobs:
         run: ./tools/build.ps1
       - name: Verify layout and algorithms
         run: |
+          node src/test_wheel_profiles.js
+          node src/test_wheel_store.js
+          node src/test_layout_editor.js
           node src/test_relative_layout.js
+          node src/test_dashboard_cache.js
+          node src/test_render_clocks.js
           node src/verify_algorithm_baseline.js
           ./tools/test-telemetry.ps1
       - name: Package sources and runtime

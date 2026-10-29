@@ -1,7 +1,7 @@
 'use strict';
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const root=path.resolve(__dirname,'..'),base=path.dirname(root);
-const repositories=['SimRacingOverlay',...(fs.existsSync(path.join(base,'moza_obs_overlay','overlay.js'))?['moza_obs_overlay']:[])];
+const repositories=['SimRacingOverlay',...(process.env.OVERLAY_TEST_PAIRED==='1'&&fs.existsSync(path.join(base,'moza_obs_overlay','overlay.js'))?['moza_obs_overlay']:[])];
 function fixture(repo){
  let now=0,nextId=0,models=0,gSamples=0;
  const timers=new Map(),frames=new Map();

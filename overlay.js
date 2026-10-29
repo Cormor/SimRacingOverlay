@@ -1,9 +1,11 @@
 'use strict';
 const canvas=document.getElementById('overlay'),nativeContext=canvas.getContext('2d');
 let ctx=typeof OpacityPaint!=='undefined'?OpacityPaint.wrap(nativeContext,kind=>layout.drawOpacity?.(kind)??1):nativeContext;
-const image=new Image();image.src='assets/wheel.png';
+let image=new Image();image.src='assets/wheel.png';
+const originalWheelImage=image;
 let roundWheelBitmap=null;
 function wheelImage(){
+ if(activeFace?.id!=='default')return image;
  if(roundWheelBitmap||!image.complete||!image.naturalWidth)return roundWheelBitmap||image;
  // Keep the leather photograph and hub. Trim its irregular outer contour to an
  // exact circle after the calibrated X correction; cache once, not per frame.
@@ -60,7 +62,7 @@ if(params.has('stage')&&typeof OverlayLayout!=='undefined'){try{OverlayLayout.se
 const latch={};
 const lockState=[{},{},{},{}];
 const knobPositions=[null,null,null,null];
-const controls=[
+const defaultControls=[
  {x:400,y:381,r:26,b:[19],led:0},{x:430,y:711,r:26,b:[20],led:1},
  {x:493,y:747,r:26,b:[21],led:2},{x:526,y:807,r:26,b:[22],led:3},
  {x:784,y:807,r:26,b:[35],led:4},{x:820,y:747,r:26,b:[34],led:5},
@@ -71,14 +73,40 @@ const controls=[
  {x:247,y:748,r:24,b:[15],axis:'leftPaddle'},{x:1066,y:748,r:24,b:[16],axis:'rightPaddle'},
  {x:306,y:361,r:13,b:[17,23]},{x:1006,y:361,r:13,b:[18,36]}
 ];
-const encoders=[{x:359,y:766,b:[26,27],first:53,led:8},{x:476,y:878,b:[39,40],first:89,led:9},{x:837,y:878,b:[30,31],first:77,led:10},{x:954,y:766,b:[28,29],first:65,led:11}];
-const ledShapes=[{"led": 0, "points": [[481, 338], [482, 337], [492, 331], [496, 329], [498, 331], [498, 348], [497, 349], [495, 349], [492, 347], [482, 340], [481, 339]]}, {"led": 1, "points": [[475, 344], [476, 343], [477, 343], [492, 354], [496, 357], [496, 358], [495, 359], [476, 359], [475, 358]]}, {"led": 2, "points": [[481, 366], [483, 365], [496, 365], [498, 367], [498, 384], [496, 386], [491, 381], [481, 368]]}, {"led": 3, "points": [[533, 319], [535, 317], [542, 316], [552, 315], [554, 315], [555, 316], [555, 318], [551, 326], [549, 328], [541, 328], [536, 323]]}, {"led": 4, "points": [[559, 324], [563, 316], [565, 314], [575, 314], [577, 316], [581, 322], [581, 324], [580, 325], [576, 326], [564, 327], [560, 327], [559, 326]]}, {"led": 5, "points": [[583, 314], [584, 313], [593, 312], [604, 312], [605, 313], [600, 323], [599, 324], [592, 325], [591, 325], [588, 322], [585, 318], [583, 315]]}, {"led": 6, "points": [[608, 322], [609, 320], [613, 313], [614, 312], [623, 311], [626, 314], [630, 320], [630, 323], [609, 323]]}, {"led": 7, "points": [[633, 312], [634, 311], [652, 311], [653, 312], [653, 313], [652, 322], [651, 323], [650, 323], [640, 322], [637, 319], [634, 315], [633, 313]]}, {"led": 8, "points": [[660, 311], [679, 311], [680, 312], [680, 313], [676, 319], [672, 323], [662, 323], [660, 322]]}, {"led": 9, "points": [[682, 322], [683, 320], [687, 314], [690, 311], [695, 311], [699, 312], [700, 313], [703, 318], [705, 322], [705, 323], [703, 324], [683, 323]]}, {"led": 10, "points": [[708, 313], [709, 312], [720, 312], [729, 313], [729, 316], [724, 323], [723, 324], [714, 324], [713, 323], [708, 314]]}, {"led": 11, "points": [[732, 323], [733, 321], [737, 315], [738, 314], [744, 314], [749, 315], [750, 316], [754, 324], [754, 326], [753, 327], [750, 327], [738, 326], [732, 325]]}, {"led": 12, "points": [[757, 317], [758, 316], [766, 316], [777, 317], [779, 319], [778, 321], [774, 326], [772, 328], [764, 328], [762, 327]]}, {"led": 13, "points": [[815, 330], [816, 329], [817, 329], [819, 330], [826, 334], [831, 337], [832, 338], [829, 341], [819, 348], [817, 349], [815, 349]]}, {"led": 14, "points": [[817, 357], [819, 355], [834, 344], [836, 343], [837, 343], [838, 344], [838, 358], [837, 359], [819, 359], [817, 358]]}, {"led": 15, "points": [[815, 366], [816, 365], [820, 365], [831, 366], [831, 368], [830, 370], [827, 374], [820, 383], [817, 386], [816, 386], [815, 385]]}];
+const defaultEncoders=[{x:359,y:766,b:[26,27],first:53,led:8},{x:476,y:878,b:[39,40],first:89,led:9},{x:837,y:878,b:[30,31],first:77,led:10},{x:954,y:766,b:[28,29],first:65,led:11}];
+const defaultLedShapes=[{"led": 0, "points": [[481, 338], [482, 337], [492, 331], [496, 329], [498, 331], [498, 348], [497, 349], [495, 349], [492, 347], [482, 340], [481, 339]]}, {"led": 1, "points": [[475, 344], [476, 343], [477, 343], [492, 354], [496, 357], [496, 358], [495, 359], [476, 359], [475, 358]]}, {"led": 2, "points": [[481, 366], [483, 365], [496, 365], [498, 367], [498, 384], [496, 386], [491, 381], [481, 368]]}, {"led": 3, "points": [[533, 319], [535, 317], [542, 316], [552, 315], [554, 315], [555, 316], [555, 318], [551, 326], [549, 328], [541, 328], [536, 323]]}, {"led": 4, "points": [[559, 324], [563, 316], [565, 314], [575, 314], [577, 316], [581, 322], [581, 324], [580, 325], [576, 326], [564, 327], [560, 327], [559, 326]]}, {"led": 5, "points": [[583, 314], [584, 313], [593, 312], [604, 312], [605, 313], [600, 323], [599, 324], [592, 325], [591, 325], [588, 322], [585, 318], [583, 315]]}, {"led": 6, "points": [[608, 322], [609, 320], [613, 313], [614, 312], [623, 311], [626, 314], [630, 320], [630, 323], [609, 323]]}, {"led": 7, "points": [[633, 312], [634, 311], [652, 311], [653, 312], [653, 313], [652, 322], [651, 323], [650, 323], [640, 322], [637, 319], [634, 315], [633, 313]]}, {"led": 8, "points": [[660, 311], [679, 311], [680, 312], [680, 313], [676, 319], [672, 323], [662, 323], [660, 322]]}, {"led": 9, "points": [[682, 322], [683, 320], [687, 314], [690, 311], [695, 311], [699, 312], [700, 313], [703, 318], [705, 322], [705, 323], [703, 324], [683, 323]]}, {"led": 10, "points": [[708, 313], [709, 312], [720, 312], [729, 313], [729, 316], [724, 323], [723, 324], [714, 324], [713, 323], [708, 314]]}, {"led": 11, "points": [[732, 323], [733, 321], [737, 315], [738, 314], [744, 314], [749, 315], [750, 316], [754, 324], [754, 326], [753, 327], [750, 327], [738, 326], [732, 325]]}, {"led": 12, "points": [[757, 317], [758, 316], [766, 316], [777, 317], [779, 319], [778, 321], [774, 326], [772, 328], [764, 328], [762, 327]]}, {"led": 13, "points": [[815, 330], [816, 329], [817, 329], [819, 330], [826, 334], [831, 337], [832, 338], [829, 341], [819, 348], [817, 349], [815, 349]]}, {"led": 14, "points": [[817, 357], [819, 355], [834, 344], [836, 343], [837, 343], [838, 344], [838, 358], [837, 359], [819, 359], [817, 358]]}, {"led": 15, "points": [[815, 366], [816, 365], [820, 365], [831, 366], [831, 368], [830, 370], [827, 374], [820, 383], [817, 386], [816, 386], [815, 385]]}];
+const defaultFace={id:'default',name:'原款方向盘',controls:defaultControls.map((c,i)=>({...c,id:'button-'+i,label:'按键 '+(i+1)})),encoders:defaultEncoders.map((e,i)=>({...e,id:'encoder-'+i,label:'旋钮 '+(i+1),r:69})),ledShapes:defaultLedShapes,dashboard:[529,344,256,81.4],center:[655,602.5],calibration:[1139/1158,1]};
+let activeFace=defaultFace,controls=defaultFace.controls.map(c=>({...c,b:c.b.slice()})),encoders=defaultFace.encoders,ledShapes=defaultLedShapes;
+let mappingHighlight=null;
+let faceRequest=0,pendingFace=null,faceError=null,lastLayoutFace='default';
+const faceCache=new Map([['default',{profile:defaultFace,image:originalWheelImage}]]);
+async function prepareFace(id){
+ if(faceCache.has(id)){const cached=faceCache.get(id);if(cached.image.decode)await cached.image.decode();return cached;}
+ if(!/^[a-z][a-z0-9-]{0,63}$/.test(id))throw Error('盘面标识无效');
+ const abort=new AbortController(),timeout=setTimeout(()=>abort.abort(),10000);
+ try{const r=await fetch('assets/wheel-packs/'+id+'.json',{cache:'no-store',signal:abort.signal});if(!r.ok)throw Error('盘面尚未下载或文件缺失');
+ const body=await r.text();if(body.length>8*1024*1024)throw Error('盘面文件过大');const profile=WheelProfiles.validate(JSON.parse(body));if(profile.id!==id)throw Error('盘面标识不匹配');
+ const bitmap=new Image();bitmap.src=profile.image;await bitmap.decode();if(bitmap.naturalWidth!==1315||bitmap.naturalHeight!==1197)throw Error('盘面图像尺寸无效');
+ const value={profile,image:bitmap};faceCache.set(id,value);return value;
+ }finally{clearTimeout(timeout);}
+}
+async function activateFace(id,commit=false){
+ const token=++faceRequest;pendingFace=id;faceError=null;
+ try{const next=await prepareFace(id);if(token!==faceRequest)return {ok:false,cancelled:true};
+ activeFace=next.profile;image=next.image;controls=activeFace.controls.map(c=>({...c,b:c.b.slice()}));encoders=activeFace.encoders;ledShapes=activeFace.ledShapes;knobPositions.fill(null);roundWheelBitmap=null;wheelFaceKey=null;
+ let before=null;if(commit){before=JSON.stringify(layout.get());const value=layout.get();value.wheel.faceId=id;lastLayoutFace=id;layout.set(value);}
+ pendingFace=null;queueScene(performance.now());window.dispatchEvent?.(new Event('wheel-face-change'));return {ok:true,id,before};
+ }catch(error){if(token!==faceRequest)return {ok:false,cancelled:true};pendingFace=null;faceError=String(error.message);window.dispatchEvent?.(new Event('wheel-face-change'));return {ok:false,error:faceError};}
+}
+function syncFaceLayout(){const id=layout.get?.().wheel?.faceId||'default';if(id===lastLayoutFace)return;lastLayoutFace=id;activateFace(id).catch(()=>{});}
+window.WheelFaces={cancel:()=>{++faceRequest;pendingFace=null;},highlight:id=>{mappingHighlight=id;queueScene(performance.now());},select:id=>activateFace(id,true),prepare:prepareFace,get:()=>({id:activeFace.id,name:activeFace.name,pending:pendingFace,error:faceError,dashboard:activeFace.dashboard,controls:activeFace.controls,encoders:activeFace.encoders}),busy:()=>pendingFace!==null};
 function text(s,x,y,size=UI.sizes.primary,color=UI.colors.text){ctx.font=`600 ${size}px ${UI.font}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=Math.max(2,size*.09);ctx.strokeStyle=UI.colors.panel;ctx.strokeText(s,x,y);ctx.fillStyle=color;ctx.fillText(s,x,y);}
 function circle(x,y,r,fill,stroke='#151820',width=5){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=width;ctx.strokeStyle=stroke;ctx.stroke();}
 function emittedColor(v){return typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)&&v.toLowerCase()!=='#000000'?v:null;}
 // Dusty rose -> apricot -> sage -> teal -> blue -> lilac: no saturated RGB bands.
 const ambientPalette=UI.palettes?.ambient||['#e5a0b0','#e6b184','#e0cd83','#aed498','#8bd3bc','#91bfe6','#b4aae6','#d5a4df'];
 function shiftLightColors(game,now){
+ if(typeof WheelProfiles!=='undefined')return WheelProfiles.shiftColors(game,now,ledShapes.length);
  if(!game?.available)return null;
  const shift=game.shiftLights,rpm=game.rpm,start=shift?.firstRpm,end=shift?.lastRpm;
  const fraction=Number.isFinite(shift?.indicator)?Math.max(0,Math.min(1,shift.indicator)):Number.isFinite(start)&&Number.isFinite(end)&&end>start&&Number.isFinite(rpm)?Math.max(0,Math.min(1,(rpm-start)/(end-start))):null;
@@ -354,7 +382,8 @@ function centreStripe(){
 const componentPaint=(!qa||params.get('retained')==='1')&&typeof ComponentPaint!=='undefined'?new ComponentPaint.Components():null;
 function componentKey(id,s,online,p,now){
  const g=s.game,a=assistView;
- if(id==='wheel')return [online,angle,image.complete,s.buttons,s.knobPositions,s.inputProfile,s.leds,g?.shiftLights,s.handbrake,s.paddleMode,s.leftPaddle,s.rightPaddle,g?.available,g?.gear,g?.rpm,g?.maxRpm,g?.rpmPercent,g?.speedKmh,a.grip?.steeringState,g?.wheels?.map(w=>w.ratio),uiInfo.waiting,buttonLightsAvailable(s.leds)&&!uiInfo.ambientKnobs?(g?.shiftLights?.blinkRpm>0&&g.rpm>=g.shiftLights.blinkRpm?Math.floor(now/100):0):Math.floor(now/33)];
+ if(id==='dashboard')return [online,s,layout.get?.().wheel?.dashboardMode];
+ if(id==='wheel')return [activeFace.id,mappingHighlight,layout.get?.().wheel,online,angle,image.complete,s.buttons,s.knobPositions,s.inputProfile,s.leds,g?.shiftLights,s.handbrake,s.paddleMode,s.leftPaddle,s.rightPaddle,g?.available,g?.gear,g?.rpm,g?.maxRpm,g?.rpmPercent,g?.speedKmh,a.grip?.steeringState,g?.wheels?.map(w=>w.ratio),uiInfo.waiting,buttonLightsAvailable(s.leds)&&!uiInfo.ambientKnobs?(g?.shiftLights?.blinkRpm>0&&g.rpm>=g.shiftLights.blinkRpm?Math.floor(now/100):0):Math.floor(now/33)];
  if(id==='brake'||id==='throttle')return [online,p.fresh,id==='brake'?[s.brake,p.brake]:[s.throttle,p.drive]];
  if(id.startsWith('slip')&&!id.startsWith('slipAngle')){const i=Number(id.slice(4)),w=g?.wheels?.[i];return [online,g?.available,g?.paused,g?.inMenu,g?.speedKmh,g?.brake,w,a.fresh,a.unloaded?.[i],w?.ratio<-.65||(lockState[i].until||0)>now?Math.floor(now/20):0];}
  if(id==='frontResponse'||id==='rearResponse')return [online,a.fresh,a.grip?.axles];
@@ -385,36 +414,42 @@ function prepareScene(now){
  const retained=params.get('edit')==='1'?null:componentPaint;
  layout.group('brake',()=>{bar(70,online?s.brake:0,UI.colors.brake,'刹车',online);if(online&&presented.fresh)pedalAssist(70,presented.brake);});
  layout.group('throttle',()=>{bar(930,online?s.throttle:0,UI.colors.throttle,'油门',online);if(online&&presented.fresh)pedalAssist(930,presented.drive);});
- const map=s.inputProfile?.buttonMap;if(Array.isArray(map)&&map.length)controls.forEach((c,i)=>{if(Number.isInteger(map[i]))c.b=[map[i]];});
- const pressed=new Set(online?s.buttons:[]);let led=s.leds||{};const liveButtonLights=online&&buttonLightsAvailable(led);
+ const wheelSettings=layout.get?.().wheel||{faceId:'default',dashboardMode:'auto',buttonMaps:{}};
+ const overrides=wheelSettings.buttonMaps?.[activeFace.id]||{};
+ controls=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls(activeFace,overrides,s.inputProfile?.buttonMap):activeFace.controls.map((c,i)=>({...c,b:Number.isInteger(s.inputProfile?.buttonMap?.[i])?[s.inputProfile.buttonMap[i]]:c.b.slice()}));
+ encoders=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls({...activeFace,controls:activeFace.encoders},overrides):activeFace.encoders;
+ const pressed=new Set(online?s.buttons:[]);let led=s.leds||{};const liveButtonLights=activeFace.id==='default'&&online&&buttonLightsAvailable(led);
  uiInfo.ambientButtons=!liveButtonLights;
  const tendency=assistView.grip?.steeringState;
  const ambientAlert=Math.max(0,Math.min(tendency?.front||0,tendency?.rear||0),...Object.values(assistView.grip?.axles||{}).map(x=>x.overrun||0),...(s.game?.speedKmh>10?s.game?.wheels||[]:[]).map(w=>Math.max(0,Math.min(1,(-(w.ratio||0)-.65)/.35))));
  // Screen-only fallback: game-reported shift thresholds, not a hardware LED acknowledgement.
- if(!(online&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&s.game?.available){
+ if(!(activeFace.id==='default'&&online&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&!uiInfo.waiting&&s.game?.available){
   const lights=shiftLightColors(s.game,now);
   if(lights){led={...led,rpm:lights.colors};uiInfo.rpmLightSource=lights.source;}else uiInfo.rpmLightSource='unavailable';
- }else uiInfo.rpmLightSource=led.available===true?'observed-device':'unavailable';
+ }else uiInfo.rpmLightSource=activeFace.id==='default'&&online&&led.available===true?'observed-device':'unavailable';
+ if(uiInfo.rpmLightSource==='unavailable'||s.game?.paused||s.game?.inMenu)led={...led,rpm:[]};
+ if(typeof WheelProfiles!=='undefined')led={...led,rpm:WheelProfiles.resample(led.rpm,ledShapes.length)};
  const knobPaint=encoders.map(e=>{
-  const n=e.led-8,rawColor=(led.knobs||[])[n],ambient=!(online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
+  const n=e.led-8,rawColor=(led.knobs||[])[n],ambient=!(activeFace.id==='default'&&online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
   const color=ambient?ambientButtonColor(e,now,ambientAlert):emittedColor(rawColor);
-  if(Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;
-  else for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;
+  if(activeFace.id==='default'&&Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;
+  else if(Number.isInteger(e.first)){for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;}else knobPositions[n]=null;
   return {e,n,color,ambient};
  });
  uiInfo.ambientKnobs=knobPaint.some(x=>x.ambient);
  const dashboardState={...s,angle};
- const faceKey=JSON.stringify([dashboardState,led,knobPositions,ambientAlert,Math.floor(now/33)]);
+ const faceKey=JSON.stringify([activeFace.id,mappingHighlight,wheelSettings,controls,encoders,dashboardState,led,knobPositions,ambientAlert,Math.floor(now/33)]);
  const drawFace=()=>{
  if(image.complete&&image.naturalWidth){ctx.shadowColor='#03050b';ctx.shadowBlur=(3)*paintScale;ctx.shadowOffsetX=(2)*paintScale;ctx.drawImage(wheelImage(),0,0);ctx.shadowBlur=(0)*paintScale;ctx.shadowOffsetX=(0)*paintScale;}
- if(image.complete&&image.naturalWidth)centreStripe();
- if(window.DashRenderer)ctx.drawImage(DashRenderer.render(dashboardState,Number(params.get('page')||1)),529,344,256,81.4);
+ if(activeFace.id==='default'&&image.complete&&image.naturalWidth)centreStripe();
+ if(window.DashRenderer&&activeFace.dashboard&&wheelSettings.dashboardMode==='auto')ctx.drawImage(DashRenderer.render(dashboardState,Number(params.get('page')||1)),...activeFace.dashboard);
  // Shapes measured from the original wheel image: 3 brow + 10 centre + 3 brow.
  for(const shape of ledShapes){const points=shape.points,light=emittedColor((led.rpm||[])[shape.led]);ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.lineJoin='round';ctx.lineWidth=7;ctx.strokeStyle='#171b20';ctx.fillStyle='#11171e';ctx.stroke();ctx.fill();
   if(light){ctx.fillStyle=light;ctx.fill();}ctx.lineWidth=1.3;ctx.strokeStyle=light?'#d9e5eb55':'#53617088';ctx.stroke();
  }
- for(const c of controls){if(c.led!==undefined)buttonCap(c,liveButtonLights?(led.buttons||[])[c.led]:ambientButtonColor(c,now,ambientAlert),!liveButtonLights);const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;if(c.b.some(b=>pressed.has(b))||axisValue>1){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
+ for(const c of controls){if(c.led!==undefined)buttonCap(c,liveButtonLights?(led.buttons||[])[c.led]:ambientButtonColor(c,now,ambientAlert),!liveButtonLights);const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;if(c.id===mappingHighlight||c.b.some(b=>pressed.has(b))||axisValue>1){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
  for(const {e,n,color,ambient} of knobPaint){
+  if(activeFace.id!=='default'){if(color)circle(e.x,e.y,e.r,'#ffffff00',color,3);if(e.id===mappingHighlight||e.b.some(b=>pressed.has(b)))circle(e.x,e.y,e.r+8,'#ffffff00','#ffdc48',4);continue;}
   // Concentric graphite bezel, fine detent marks and one selected sector.
   circle(e.x,e.y,69,'#0b1017','#778493',2);circle(e.x,e.y,64,'#202a36','#05090e',3);
   for(let i=0;i<12;i++){const a=i*Math.PI/6-Math.PI/2,selected=i===knobPositions[n];ctx.beginPath();ctx.arc(e.x,e.y,53,a+.045,a+Math.PI/6-.045);ctx.lineWidth=selected?17:10;ctx.strokeStyle=selected?(color||'#d8e5ee'):'#344150';ctx.stroke();
@@ -428,17 +463,18 @@ function prepareScene(now){
  }
  for(const c of controls){const active=c.b.filter(b=>pressed.has(b));if(active.length)text(active.join('·'),c.x,c.y,c.r<20?18:23,'#eafaff');}
  const extra=[...pressed].filter(n=>!controls.some(c=>c.b.includes(n)));
- if(extra.length)text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
+ if(extra.length&&activeFace.id==='default')text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
  };
  layout.group('wheel',()=>{
  ctx.save();ctx.translate(500,450);ctx.rotate(paintAngle*Math.PI/180);ctx.scale(740/1315,740/1315);
  // Calibrated opaque rim: x=76..1234, y=33..1172. Correct the original
  // photograph before rotation; all buttons and the dashboard share this transform.
- ctx.scale(1139/1158,1);ctx.translate(-655,-602.5);
+ ctx.scale(...activeFace.calibration);ctx.translate(-activeFace.center[0],-activeFace.center[1]);
  paintWheelFace(faceKey,drawFace);
  ctx.restore();
  waitingBadge(uiInfo.waiting);
  });
+ layout.group('dashboard',()=>{if(window.DashRenderer&&wheelSettings.dashboardMode==='separate')ctx.drawImage(DashRenderer.render({...dashboardState,angle:0},Number(params.get('page')||1)),370,210,260,83);});
  for(let i=0;i<4;i++)layout.group('slip'+i,()=>wheelSlip(s,online,assistView,i,false));
  drivingUi(s,online,presented);
  layout.group('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
@@ -493,7 +529,8 @@ function queueScene(now=performance.now()){
 let lastInputAt=-Infinity;
 function startSceneClock(){
  image.onload=()=>queueScene(performance.now());
- layout.onChange?.(()=>queueScene(performance.now()));
+ layout.onChange?.(()=>{syncFaceLayout();queueScene(performance.now());});
+ syncFaceLayout();
  if(typeof addEventListener==='function')addEventListener('resize',()=>queueScene(performance.now()));
  if(typeof window!=='undefined')window.addEventListener('overlay-refresh',()=>{if(componentPaint)componentPaint.invalidate();sceneSignature=null;queueScene(performance.now());});
  if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(componentPaint)componentPaint.invalidate();sceneSignature=null;queueScene(performance.now());}});
@@ -556,4 +593,4 @@ async function poll(){
  setTimeout(poll,Math.max(0,1000/60-(performance.now()-requestAt)));
 }
 if(!demo&&!qa){openStream();poll();}startSceneClock();
-window.overlayDiagnostics={controls,encoders,getPerformance,getGBall:()=>gBallView,resetGPeak:()=>gBallModel?.clearPeak(),getUi:()=>({...uiInfo}),getState:()=>state,getAssist:()=>assistView,getPresentation:()=>presentation,getPaint:()=>componentPaint?.stats,getWheelFace:()=>({...wheelFaceStats}),renderTest:at=>{if(qa){prepareScene(at??performance.now());render();}},paintTest:()=>{if(qa)render();},setTestState:testState};
+window.overlayDiagnostics={get controls(){return controls;},get encoders(){return encoders;},getPerformance,getGBall:()=>gBallView,resetGPeak:()=>gBallModel?.clearPeak(),getUi:()=>({...uiInfo}),getState:()=>state,getAssist:()=>assistView,getPresentation:()=>presentation,getPaint:()=>componentPaint?.stats,getWheelFace:()=>({...wheelFaceStats}),renderTest:at=>{if(qa){prepareScene(at??performance.now());render();}},paintTest:()=>{if(qa)render();},setTestState:testState};

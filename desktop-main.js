@@ -5,6 +5,7 @@ const root=__dirname,config=path.join(root,'runtime','desktop.json'),statusFile=
 app.setPath('userData',path.join(root,'runtime','desktop-profile'));
 app.setName('SimRacingOverlay');
 const port=(()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'settings.json'),'utf8')).httpPort||18764;}catch{return 18764;}})();
+const wheelStore=require('./wheel-store').createStore({root,catalog:JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-catalog.json'),'utf8')),validate:require('./wheel-profile').validate});
 const baseUrl='http://127.0.0.1:'+port+'/';
 if(!app.requestSingleInstanceLock()){app.quit();}else{
  let win,last='',timer,resize=null,move=null,tray,applying=false,suppressUntil=0,exiting=false,exitPrepared=false,displayPixels=null,pixelDisplayId=null,displaySyncBusy=false;
@@ -24,7 +25,7 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
    if(!exiting){exiting=true;win.webContents.executeJavaScript('window.overlayEditor?.flushSaveNow() ?? ({ok:true})').then(result=>{if(result?.ok)exitPrepared=true;else{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));}exiting=false;last='';apply();}).catch(()=>{const current=settings();current.edit=true;fs.writeFileSync(config,JSON.stringify(current));exiting=false;last='';});}return;
   }
   const display=selectedDisplay();
-  const revision=['ui.css','ui-theme.js','flags.js','legacy-chassis-response.js','component-paint.js','telemetry-worker.js','telemetry-processor.js','overlay.js','assist.js','chassis-response.js','realtime-response.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout-preset.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
+  const revision=['wheel-profile.js','ui.css','ui-theme.js','flags.js','legacy-chassis-response.js','component-paint.js','telemetry-worker.js','telemetry-processor.js','overlay.js','assist.js','chassis-response.js','realtime-response.js','grip.js','steering-advisor.js','reserve.js','telemetry-context.js','tyre-response.js','handling.js','dashboard.js','index.html','g-ball.js','layout-preset.js','layout.js','editor.js','paint-context.js'].reduce((sum,file)=>sum+fs.statSync(path.join(root,file)).mtimeMs,0),key=JSON.stringify(s)+revision+JSON.stringify([display.id,display.bounds,display.workArea,display.scaleFactor]);if(key===last)return;last=key;
   const displays=screen.getAllDisplays(),d=s.monitor>0?displays[Math.min(displays.length-1,s.monitor-1)]:screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const area=d.bounds,scene=desktopScene(s,d);saveScene(scene);
   applying=true;suppressUntil=Date.now()+500;win.setBounds({...area});
@@ -39,6 +40,9 @@ if(!app.requestSingleInstanceLock()){app.quit();}else{
   // Full-monitor transparent surface; moving a control never changes native window bounds.
 
   function writeLayout(input){try{const d=screen.getDisplayMatching(win.getBounds()),value=require('./layout.js').clean({...input,stage:desktopScene(settings(),d)}),target=path.join(root,'assets','layout.json'),temp=target+'.tmp';fs.writeFileSync(temp,JSON.stringify(value,null,2));fs.renameSync(temp,target);return {ok:true};}catch(err){return {ok:false,error:String(err.message)};}}
+  const canEdit=e=>e.sender===win.webContents&&settings().edit&&win.webContents.getURL().startsWith(baseUrl)&&win.webContents.getURL().includes('&edit=1');
+  ipcMain.handle('wheel-list',e=>{if(!canEdit(e))return {ok:false,error:'编辑模式未开启'};try{return {ok:true,faces:wheelStore.list()};}catch(err){return {ok:false,error:err.message};}});
+  ipcMain.handle('wheel-download',async(e,id)=>{if(!canEdit(e))return {ok:false,error:'编辑模式未开启'};try{return await wheelStore.install(id);}catch(err){return {ok:false,error:err.message};}});
   ipcMain.handle?.('layout-save',(e,input)=>e.sender===win.webContents&&settings().edit?writeLayout(input):{ok:false,error:'编辑模式未开启'});
   ipcMain.on('layout-save-sync',(e,input)=>{e.returnValue=e.sender===win.webContents&&win.webContents.getURL().includes('&edit=1')?writeLayout(input):{ok:false,error:'非当前编辑页面'};});
   ipcMain.on('edit-finish',e=>{if(e.sender!==win.webContents)return;const s=settings();s.edit=false;fs.writeFileSync(config,JSON.stringify(s));apply();});

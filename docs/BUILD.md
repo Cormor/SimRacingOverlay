@@ -39,3 +39,6 @@ python -m PyInstaller --clean --onefile --noconsole --name MozaLedObserver --dis
 ```
 
 生成器在隐藏的离屏窗口中加载实际界面，注入固定随机种子的模拟数值，再由 `OffscreenCanvas.convertToBlob` 导出 `docs/images/overview.png`、`states.png` 和 `flags.png`，不调用截图接口。状态分别触发，展示用数据组合了不同数据源支持的能力；不会连接设备、实时桥接或修改用户布局。生成记录保存在被 Git 忽略的 `build/readme-render`。
+
+
+1.3.0 的打包脚本会额外生成清单中的 `*.wheel.json` 与相应校验行，上传脚本将这些文件与主包一起上传到同一版本草稿。`wheel-packs/` 中的原创源素材和 `assets/wheel-packs/` 下载缓存均不进入主程序 ZIP；发布前核对包内默认只有原款。Windows界面验收可将独立盘面JSON作为显式输入，参见 [WHEEL-FACES.md](WHEEL-FACES.md)。

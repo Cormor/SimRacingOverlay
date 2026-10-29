@@ -15,7 +15,7 @@ for glob in ('*.js','*.css','*.html','*.lua','*.ps1','*.cmd','*.md','VERSION','L
 for folder in ('src','assets','defaults','tools','tests','docs','licenses'):
  source.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and p.name!='layout.json' or p.is_file() and folder=='defaults')
 # Machine-specific runtime state is excluded; the shared preset is public.
-source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc'))
+source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts))
 # Rebuilt native files must be bound to the exact source in this package.
 receipt=json.loads((ROOT/'runtime/native-build.json').read_text(encoding='utf-8-sig'))
 for group in ('sources','binaries'):
@@ -39,5 +39,12 @@ with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=
 with zipfile.ZipFile(archive) as z:
  assert z.testzip() is None
 sha=hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()
-(DIST/'SHA256SUMS.txt').write_text(sha+'  '+archive.name+'\n',encoding='ascii')
+checksums=sha+'  '+archive.name+'\n'
+for face in json.loads((ROOT/'assets/wheel-catalog.json').read_text(encoding='utf-8')):
+ pack=ROOT/'wheel-packs'/face['id']/'profile.json';inspect_file(pack)
+ data=pack.read_bytes()
+ digest=hashlib.sha256(data).hexdigest()
+ assert digest==face['sha256'],'Wheel pack does not match catalog: '+face['id']
+ name=face['id']+'.wheel.json';(DIST/name).write_bytes(data);checksums+=digest+'  '+name+'\n'
+(DIST/'SHA256SUMS.txt').write_text(checksums,encoding='ascii')
 print(json.dumps({'archive':archive.name,'bytes':archive.stat().st_size,'sha256':sha,'payloadFiles':len(manifest)}))
