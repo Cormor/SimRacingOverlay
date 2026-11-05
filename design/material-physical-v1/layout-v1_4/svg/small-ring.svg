@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="44" viewBox="0 0 144 44">
+<title>可参数化单凸金属环：SVG几何与工程渐变近似</title>
+<desc>中央为evenodd孔；颜色来自公司令牌与工程边界，不是JC光谱计算或PBR预览的矢量复刻。改变尺寸应重新运行算法以保留边宽和圆角。</desc>
+<metadata>{&quot;role&quot;: &quot;pure vector geometry plus engineering gradient, not spectral rendering&quot;, &quot;width_css&quot;: 144, &quot;height_css&quot;: 44, &quot;radius_css&quot;: 8.0, &quot;edge_css&quot;: 2.0, &quot;color_mapping&quot;: &quot;materials2.0 boundary / tokens accent / tokens text: engineering visual approximation, not sampled PBR&quot;}</metadata>
+<defs><linearGradient id="gold-preview-small" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#94702D"/><stop offset=".48" stop-color="#E8C66A"/><stop offset="1" stop-color="#F4F1E8"/></linearGradient></defs>
+<path d="M8,0 H136 A8,8 0 0 1 144,8 V36 A8,8 0 0 1 136,44 H8 A8,8 0 0 1 0,36 V8 A8,8 0 0 1 8,0 Z M8,2 H136 A6,6 0 0 1 142,8 V36 A6,6 0 0 1 136,42 H8 A6,6 0 0 1 2,36 V8 A6,6 0 0 1 8,2 Z" fill="url(#gold-preview-small)" fill-rule="evenodd"/>
+</svg>

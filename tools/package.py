@@ -9,15 +9,22 @@ DIST=ROOT/'dist';DIST.mkdir(exist_ok=True)
 stage=DIST/f'SimRacingOverlay-{version}-Windows-x64'
 if stage.exists(): raise SystemExit('Stage exists; choose a new version or archive the previous stage before packaging.')
 stage.mkdir()
+# Local AI instructions, handoffs and machine-specific execution records are
+# maintenance evidence, not portable program source or public user guidance.
+local_documents={'AGENTS.md','docs/ARCHITECTURE-REVIEW.md','docs/CODE-REVIEW.md','docs/UI-DELIVERY.md','docs/UI-REVIEW.md','docs/UI-WORKLOG.md'}
 source=[]
 for glob in ('*.js','*.css','*.html','*.lua','*.ps1','*.cmd','*.md','VERSION','LICENSE','.gitignore','.gitattributes'):
  source.extend(p for p in ROOT.glob(glob) if p.is_file())
-for folder in ('src','assets','defaults','tools','tests','docs','licenses'):
+for folder in ('src','assets','defaults','tools','tests','docs','licenses','design','.github'):
  source.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and p.name!='layout.json' or p.is_file() and folder=='defaults')
 # Machine-specific runtime state is excluded; the shared preset is public.
-source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts))
+source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts and p.relative_to(ROOT).as_posix() not in local_documents))
 # Rebuilt native files must be bound to the exact source in this package.
 receipt=json.loads((ROOT/'runtime/native-build.json').read_text(encoding='utf-8-sig'))
+required_sources={'src/SimHubPlugin.cs','src/led_tap.py','src/led_decoder.py','src/led-tap.js'}
+required_binaries={'runtime/SimRacingOverlay.SimHub.dll','runtime/MozaLedObserver.exe'}
+if not required_sources.issubset(receipt['sources']) or not required_binaries.issubset(receipt['binaries']):
+ raise RuntimeError('A complete release requires build.ps1 -SimHubPath <SDK> -BuildObserver before packaging.')
 for group in ('sources','binaries'):
  for name,expected in receipt[group].items():
   if hashlib.file_digest((ROOT/name).open('rb'),'sha256').hexdigest()!=expected:raise RuntimeError('Native build/source mismatch: '+name)

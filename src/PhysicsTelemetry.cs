@@ -22,11 +22,12 @@ static class PhysicsTelemetry {
   string s=Encoding.Unicode.GetString(b,o,n*2).Split('\0')[0];return string.IsNullOrWhiteSpace(s)?null:s;
  }
  static bool? Active(byte[] b,int o){int? v=Integer(b,o,0,1);return v.HasValue?(bool?)(v==1):null;}
- public static object Decode(byte[] b,byte[] st,long time) {
+ static bool HasPayload(byte[] b){return b.Skip(4).Any(x=>x!=0);}
+ public static object Decode(byte[] b,byte[] st,long time,long? receivedAt=null,string streamEpoch=null) {
   if(b==null||b.Length<672)return new {available=false};
   // ACR keeps incrementing packetId while clearing the complete physics payload in menus.
   // Do not interpret this as four genuinely airborne tyres.
-  if(!b.Skip(4).Any(x=>x!=0))return new {available=false,reason="empty-physics-payload"};
+  if(!HasPayload(b))return new {available=false,reason="empty-physics-payload"};
   var speed=Number(b,28,0,650);if(!speed.HasValue)return new {available=false};
   var keys=new[]{"FL","FR","RL","RR"};
   var wheels=Enumerable.Range(0,4).Select(i=>new {
@@ -41,7 +42,7 @@ static class PhysicsTelemetry {
    brakeTemperatureRaw=Number(b,348+4*i,1,2500),radius=Number(st,436+4*i,.1,1.2)
   }).ToArray();
   return new {available=true,telemetryVersion=2,optionalVersion=1,packet=BitConverter.ToInt32(b,0),source="acpmf_physics",
-   sampleTime=time,carModel=Text(st,68,33),track=Text(st,134,33),sharedMemoryVersion=Text(st,0,15),gameVersion=Text(st,30,15),
+   sampleTime=time,sampleTimeKind="bridge-observed-monotonic",receivedAt,streamEpoch,carModel=Text(st,68,33),track=Text(st,134,33),sharedMemoryVersion=Text(st,0,15),gameVersion=Text(st,30,15),
    rpm=Integer(b,20,0,30000),gear=Integer(b,16,0,20)-1,speedKmh=speed,maxRpm=Integer(b,588,1,30000)??Integer(st,412,1,30000),
    gas=Number(b,4,0,1),brake=Number(b,8,0,1),clutch=Number(b,364,0,1),nativeSteer=Number(b,24,-100,100),wheels=wheels,
    velocity=Vector(b,32,250),localVelocity=Vector(b,568,250),angularVelocity=Vector(b,296,100),accG=Vector(b,44,30),
@@ -54,4 +55,45 @@ static class PhysicsTelemetry {
     tcActive=Active(b,672)==true||Number(b,204,0,100)>.01,engineRunning=Active(b,780),ignition=Active(b,772),pitLimiter=Active(b,248),
     escActive=(object)null,absSetting=Number(b,252,0,100),tcSetting=Number(b,204,0,100)}};
  }
+ // The ACR mapping supplies a packet identifier, not a physics timestamp.
+ // Only a new coherent packet receives a new local observation time.
+ internal sealed class Session {
+  internal const int LifetimeMs=400;
+  readonly string instance=Guid.NewGuid().ToString("N");
+  int? packet;
+  long observation,epoch;
+  string car,track;
+  object current;
+  internal long? LastSampleAt{get{return current!=null?(long?)observation:null;}}
+  internal bool AwaitingAdvance{get{return packet.HasValue&&current==null;}}
+
+  internal object Current(long now){
+   if(packet.HasValue&&(now<observation||now-observation>LifetimeMs))Disconnect();
+   return current;
+  }
+  internal void Disconnect(){
+   if(packet.HasValue)epoch++;
+   packet=null;car=null;track=null;current=null;
+  }
+  internal object Observe(byte[] data,byte[] metadata,long now,long receivedAt){
+   Current(now);
+   if(data==null||data.Length<672)return current;
+   if(!HasPayload(data)){Disconnect();return null;}
+   if(!Number(data,28,0,650).HasValue)return current;
+
+   int next=BitConverter.ToInt32(data,0);
+   var nextCar=Text(metadata,68,33);
+   var nextTrack=Text(metadata,134,33);
+   bool identityChanged=car!=null&&nextCar!=null&&car!=nextCar||
+    track!=null&&nextTrack!=null&&track!=nextTrack;
+   if(packet.HasValue&&(identityChanged||unchecked(next-packet.Value)<0))Disconnect();
+   car=nextCar??car;track=nextTrack??track;
+   if(!packet.HasValue){packet=next;observation=now;return null;}
+   if(next==packet.Value)return current;
+   packet=next;observation=now;
+   current=Decode(data,metadata,now,receivedAt,instance+":"+epoch);
+   return current;
+  }
+ }
+
 }

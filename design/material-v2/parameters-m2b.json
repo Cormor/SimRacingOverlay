@@ -1,0 +1,66 @@
+{
+  "seed": 20261103,
+  "samples": 64,
+  "f0_linear_rgb": [
+    0.91,
+    0.68,
+    0.31
+  ],
+  "roughness": {
+    "polished": 0.18
+  },
+  "roughness_jitter": 0.004,
+  "button": {
+    "width": 240,
+    "height": 44,
+    "radius": 8,
+    "bevel_width": 2.2,
+    "bevel_height": 0.9,
+    "crown_height": 0.37
+  },
+  "environment": {
+    "background": [
+      0.025,
+      0.035
+    ],
+    "face_box": [
+      0.0,
+      0.0,
+      1.0,
+      0.1,
+      0.1
+    ],
+    "face_intensity": 1.1,
+    "key_box": [
+      -0.3,
+      -0.65,
+      0.7,
+      0.1,
+      0.035
+    ],
+    "key_intensity": 12.0,
+    "side_box": [
+      1.0,
+      -0.08,
+      0.04,
+      0.8,
+      0.025
+    ],
+    "side_intensity": 16.0
+  },
+  "environment_yaw_degrees": [
+    0
+  ],
+  "normal_quantization": 2048,
+  "roughness_quantization": 1024,
+  "tone_mapping": "exposure; maximum-channel shoulder; highlight convergence; sRGB",
+  "camera": {
+    "exposure": 0.75,
+    "shoulder": 0.65,
+    "white_rolloff_start": 2.0,
+    "white_rolloff_end": 8.0,
+    "white_mix_max": 0.9
+  },
+  "candidate": "M2b",
+  "application": "neutral face with small metal border; selected primary only"
+}

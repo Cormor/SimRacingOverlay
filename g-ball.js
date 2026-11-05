@@ -4,18 +4,18 @@
  const vec=v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite),add=(a,b)=>a.map((v,i)=>v+b[i]),sub=(a,b)=>a.map((v,i)=>v-b[i]),mul=(a,k)=>a.map(v=>v*k),dot=(a,b)=>a.reduce((s,v,i)=>s+v*b[i],0),unit=a=>{const n=Math.hypot(...a);return n>.01?mul(a,1/n):null;};
  class Model{
   constructor(storage=null,wallNow=()=>Date.now()){this.storage=storage;this.wallNow=wallNow;this.reset();try{this.restoreStored(storage?.getItem('moza-g-last'));}catch{}}
-  reset(){this.samples=[];this.recentG=[];this.supported=[];this.trail=[];this.envelope=Array(72).fill(0);this.peak=0;this.current=null;this.packet=null;this.lastAdvance=null;this.lastSampleAt=null;this.key=null;this.savedAt=-Infinity;this.noDataSince=null;this.viewNow=0;this.pendingRestore=null;}
+  reset(){this.samples=[];this.recentG=[];this.supported=[];this.trail=[];this.envelope=Array(72).fill(0);this.peak=0;this.current=null;this.packet=null;this.lastAdvance=null;this.lastSampleAt=null;this.key=null;this.savedAt=-Infinity;this.noDataSince=null;this.viewNow=0;this.pendingRestore=null;this.streamEpoch=null;}
   clearTelemetry(now){
    if(this.packet!==null||this.lastAdvance!==null||this.peak>0||this.current||this.trail.length||this.samples.length){const key=this.key;this.reset();this.key=key;this.viewNow=now;this.persist(true);}
    return this.view(now);
   }
-  clearPeak(){this.peak=0;this.envelope.fill(0);this.trail=[];this.supported=[];this.persist();}
+  clearPeak(){this.peak=0;this.envelope.fill(0);this.trail=[];this.recentG=[];this.supported=[];this.pendingRestore=null;this.persist();}
   restoreStored(key){
    if(!key||!this.storage)return;try{const s=JSON.parse(this.storage.getItem('moza-g-peak:'+key)||'null');if(!s||!(s.expiresAt>this.wallNow())||!Number.isFinite(s.peak)||s.peak<0||s.peak>20||!Array.isArray(s.envelope)||s.envelope.length!==72||!s.envelope.every(v=>Number.isFinite(v)&&v>=0&&v<=20))return;
-    this.key=key;this.peak=s.peak;this.envelope=s.envelope;this.current=s.current&&['lateral','longitudinal','magnitude'].every(k=>Number.isFinite(s.current[k]))?s.current:null;this.pendingRestore={remaining:Math.min(30000,s.expiresAt-this.wallNow()),trail:(Array.isArray(s.trail)?s.trail:[]).filter(p=>['lateral','longitudinal','magnitude','age'].every(k=>Number.isFinite(p[k]))).slice(-120)};
+    this.key=key;this.streamEpoch=s.streamEpoch??null;this.peak=s.peak;this.envelope=s.envelope;this.current=s.current&&['lateral','longitudinal','magnitude'].every(k=>Number.isFinite(s.current[k]))?s.current:null;this.pendingRestore={remaining:Math.min(30000,s.expiresAt-this.wallNow()),trail:(Array.isArray(s.trail)?s.trail:[]).filter(p=>['lateral','longitudinal','magnitude','age'].every(k=>Number.isFinite(p[k]))).slice(-120)};
    }catch{}
   }
-  persist(expired=false){if(this.key&&this.storage)try{const reference=this.noDataSince??this.viewNow,remaining=this.noDataSince===null?30000:Math.max(0,30000-(this.viewNow-this.noDataSince));this.storage.setItem('moza-g-last',this.key);this.storage.setItem('moza-g-peak:'+this.key,JSON.stringify({peak:this.peak,envelope:this.envelope,current:this.current,expiresAt:expired?0:this.wallNow()+remaining,trail:this.trail.map(p=>({...p,age:Math.max(0,reference-p.t)}))}));}catch{}}
+  persist(expired=false){if(this.key&&this.storage)try{const reference=this.noDataSince??this.viewNow,remaining=this.noDataSince===null?30000:Math.max(0,30000-(this.viewNow-this.noDataSince));this.storage.setItem('moza-g-last',this.key);this.storage.setItem('moza-g-peak:'+this.key,JSON.stringify({streamEpoch:this.streamEpoch,peak:this.peak,envelope:this.envelope,current:this.current,expiresAt:expired?0:this.wallNow()+remaining,trail:this.trail.map(p=>({...p,age:Math.max(0,reference-p.t)}))}));}catch{}}
   noData(now){
    if(this.noDataSince===null){this.noDataSince=now;this.samples=[];this.recentG=[];this.supported=[];this.persist();}
    if(now-this.noDataSince>=30000)return this.clearTelemetry(now);
@@ -25,11 +25,16 @@
   update(g,now){
    this.viewNow=now;
    if(this.pendingRestore){const cached=this.pendingRestore;this.pendingRestore=null;this.noDataSince=now-(30000-cached.remaining);this.trail=cached.trail.map(p=>({...p,t:this.noDataSince-p.age}));}
+   if(g?.available){
+    const key=String(g.source)+':'+String(g.vehicleIdentity||g.carModel),epoch=g.streamEpoch??null;
+    if(key!==this.key){this.reset();this.key=key;this.viewNow=now;this.persist(true);}
+    if(epoch!==null&&this.streamEpoch!==null&&epoch!==this.streamEpoch){this.clearTelemetry(now);this.pendingRestore=null;}
+    if(epoch!==null)this.streamEpoch=epoch;
+    if(g.paused===true||g.inMenu===true){this.samples=[];this.recentG=[];this.supported=[];this.current=null;this.packet=null;this.lastAdvance=null;this.lastSampleAt=null;this.noDataSince=null;if(now-this.savedAt>=1000){this.persist();this.savedAt=now;}return this.view(now);}
+   }
    const zeroPayload=g?.available===true&&g.speedKmh===0&&g.rpm===0&&vec(g.velocity)&&g.velocity.every(v=>v===0)&&g.wheels?.length===4&&g.wheels.every(w=>w.load===0&&w.fx===0&&w.fy===0&&vec(w.contactPoint)&&w.contactPoint.every(v=>v===0));
    if(!g?.available||(!vec(g.velocity)&&!(g.accGFrame==='body'&&vec(g.accG)))||zeroPayload)return this.noData(now);
    if(now<(this.lastAdvance??0))this.clearTelemetry(now);
-   const key=g?.available?String(g.source)+':'+String(g.carModel):this.key;
-   if(key!==this.key){this.reset();this.key=key;this.viewNow=now;this.restoreStored(key);if(this.pendingRestore){const c=this.pendingRestore;this.pendingRestore=null;this.noDataSince=now-(30000-c.remaining);this.trail=c.trail.map(p=>({...p,t:this.noDataSince-p.age}));}}
    if((Number.isInteger(g.packet)&&Number.isInteger(this.packet)&&g.packet<this.packet)||(Number.isFinite(g.sampleTime)&&this.lastSampleAt!==null&&g.sampleTime<this.lastSampleAt)){this.samples=[];this.recentG=[];this.supported=[];this.packet=null;this.lastSampleAt=null;}
    if(g.packet===this.packet){if(now-this.lastAdvance>250)return this.noData(now);return this.view(now);}
    if((this.noDataSince!==null&&now-this.noDataSince>=30000)||(this.lastAdvance!==null&&now-this.lastAdvance>=30000))this.clearTelemetry(now);

@@ -1,3 +1,12 @@
-$root=$PSScriptRoot
-[IO.File]::WriteAllText((Join-Path $root 'runtime\autostart.paused'),'Paused until the next manual start.')
-Get-CimInstance Win32_Process | Where-Object {($_.Name -in @('SimRacingBridge.exe','MozaLedObserver.exe') -and $_.ExecutablePath -like "$root\runtime\*") -or ($_.Name -eq 'electron.exe' -and $_.ExecutablePath -eq "$root\runtime\electron\electron.exe" -and $_.CommandLine -like "*$root\desktop-main.js*")} | ForEach-Object {Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue}
+﻿$ErrorActionPreference='Stop'
+. (Join-Path $PSScriptRoot 'tools\Lifecycle.ps1')
+$root=[OverlayLifecyclePaths]::Canonical($PSScriptRoot)
+$mutex=Enter-OverlayLock
+try {
+ Stop-OverlayRuntime $root -Pause
+ Set-OverlayLifecycle $root 'paused'
+ @{ok=$true;state='paused';root=$root}|ConvertTo-Json -Compress
+} catch {
+ try{Set-OverlayLifecycle $root 'stop-failed' @{error=$_.Exception.Message}}catch{}
+ throw
+} finally {Exit-OverlayLock $mutex}

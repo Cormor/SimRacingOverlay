@@ -73,7 +73,34 @@ class TestIRacingTelemetry {
   Text(6500,other);Int(16,other.Length);Int(12,7);Int(64,7);tearSession=true;
   var tornMeta=Map(reader.Poll(1760));Check(tornMeta["vehicleGeometry"]==null&&tornMeta["maxRpm"]==null&&tornMeta["carModel"]==null,"changed but torn metadata cannot leak previous car geometry into a new physics row");
   Int(64,8);Check(Map(reader.Poll(1780))["vehicleGeometry"]==null,"unrecognized active car remains geometry-unknown after coherent metadata recovery");
+  // The production connection owner operates on the same byte reader as
+  // the existing fixture, with counted handles instead of a live game mapping.
+  Int(4,1);Int(32,1);Int(48,200);Int(52,rowAt);Int(12,8);
+  int opened=0,closed=0;
+  var connection=new IRacingTelemetry.Connection(()=>{
+   opened++;
+   return new IRacingTelemetry.Mapping(Read,()=>closed++);
+  });
+  Check(connection.Current(2000,102000)==null&&connection.Current(2010,102010)==null&&opened==1,
+   "opening a static mapping cannot by itself publish live telemetry");
+  Int(48,201);
+  var live=Map(connection.Current(2020,102020));
+  Check(live!=null&&(long)live["receivedAt"]==102020,"a progressing mapping publishes its original observed time");
+  Check(connection.Current(2421,102421)==null&&closed==1&&opened==1,"a stale mapping closes both resources");
+  Check(connection.Current(3000,103000)==null&&opened==1,"closed mappings wait for backoff");
+  Check(connection.Current(3421,103421)==null&&opened==2,"reopening the same stale mapping still needs actual tick progress");
+  Int(48,202);
+  var recovered=Map(connection.Current(3431,103431));
+  Check(recovered!=null&&!object.Equals(live["streamEpoch"],recovered["streamEpoch"]),"reopened reader emits a different connection epoch");
+  Int(4,0);
+  Check(connection.Current(3441,103441)==null&&closed==2,"explicit disconnect releases the mapping immediately");
+  Int(4,1);Int(48,10);
+  Check(connection.Current(4441,104441)==null&&opened==3,"reconnect after disconnect starts in probe state");
+  connection.CloseIfIdle(5441);
+  Check(closed==3&&connection.IdleDelay(5441)==System.Threading.Timeout.Infinite,"idle selection releases the mapping even without another poll");
+  Check(connection.Current(5442,105442)==null&&opened==4,"idle release does not delay the next actual demand");
+  connection.CloseIfIdle(6442);
   Console.WriteLine("PASS: active-car switch, mixed grid, independent CarPath/CarID identity, unknown-car isolation and torn-metadata geometry clearing.");
-  Console.WriteLine("PASS: IRSDK variable-table types/units, SI mapping, clock, zero clutch, repeat/stall/recovery, torn snapshot, triple buffers, nonfinite core, reconnect/table reset and optional-unit isolation.");
+  Console.WriteLine("PASS: IRSDK variable-table types/units, SI mapping, clock, zero clutch, repeat/stall/recovery, torn snapshot, triple buffers, nonfinite core, reconnect/table reset, mapping close/reopen/probe epochs, and optional-unit isolation.");
  }
 }

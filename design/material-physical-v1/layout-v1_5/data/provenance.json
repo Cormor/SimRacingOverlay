@@ -1,0 +1,13 @@
+{
+  "doi": "https://doi.org/10.1103/PhysRevB.6.4370",
+  "repository": "polyanskiy/refractiveindex.info-database",
+  "commit": null,
+  "commit_lookup_error": "HTTP Error 403: rate limit exceeded",
+  "url": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/main/database/data/main/Au/nk/Johnson.yml",
+  "original_url": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/main/database/data/main/Au/nk/Johnson.yml",
+  "retrieved_at_utc": "2026-11-03T07:59:32.933219+00:00",
+  "sha256": "9f4bdab6bd49f7c6a1c48b5fb5482c7448caf4b6de39594a34ecd66dcf592774",
+  "license": "CC0-1.0",
+  "license_url": "https://raw.githubusercontent.com/polyanskiy/refractiveindex.info-database/main/LICENSE",
+  "source_kind": "refractiveindex.info维护者公开录入，非实验室原始数据仓"
+}

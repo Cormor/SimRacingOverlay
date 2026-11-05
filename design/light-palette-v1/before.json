@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "role": "observed tokens2.0/S01-light baseline",
+    "authority": "SoftwareCompany/design/palettes/clear-platinum-light.json",
+    "snapshot_only": true
+  },
+  "color": {
+    "light": {
+      "canvas": "#F7F6F2",
+      "surface": "#FFFFFF",
+      "surfaceRaised": "#F1EEE6",
+      "text": "#1E1C18",
+      "textMuted": "#5E594F",
+      "border": "#817A6C",
+      "accent": "#785500",
+      "onAccent": "#FFFFFF",
+      "accentFill": "#E8C66A",
+      "onAccentFill": "#211A08",
+      "focus": "#674800",
+      "success": "#176B42",
+      "onSuccess": "#FFFFFF",
+      "warning": "#705000",
+      "onWarning": "#FFFFFF",
+      "danger": "#A32E25",
+      "onDanger": "#FFFFFF",
+      "info": "#145C86",
+      "onInfo": "#FFFFFF"
+    }
+  }
+}

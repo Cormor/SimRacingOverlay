@@ -1,5 +1,6 @@
 'use strict';
 (function(){
+ if(new URLSearchParams(location.search).get('desktop')==='1')return;
  const L=window.OverlayLayout,canvas=document.getElementById('overlay');
  const editing=new URLSearchParams(location.search).get('edit')==='1'&&!!window.desktopOverlay;
  let loadRequest=0,faceDownloadCount=0;

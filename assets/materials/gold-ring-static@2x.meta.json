@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "profile_version": "2.3",
+  "paths_relative_to": "SimRacingOverlay-ui-refactor project root",
+  "cache": "assets/materials/gold-ring-static@2x.png",
+  "sha256": "54c7515e1815e46b36c75d61579cb34128b96f90820e8198b147b6d761c6f15b",
+  "bytes": 9420,
+  "canonical_manifest": "../SoftwareCompany/design/algorithms/gold-ring/source-manifest.json",
+  "origin_instance": "SimRacingOverlay-ui-refactor/design/material-physical-v1/layout-v1_6",
+  "origin_source": "same-scene medium-ring-2x.png, original bytes, no body/text extraction",
+  "input_sha256": "6cab419a8b5b1ff303cd169a76b1810698aa73dab1afb2d900b55f812098877e",
+  "resolved_scene_sha256": "184fb9263dd6e29a9c2e9fee1809f7d6e19ecdedcadb471650a97cc895e37868",
+  "material_data_sha256": "9f4bdab6bd49f7c6a1c48b5fb5482c7448caf4b6de39594a34ecd66dcf592774",
+  "geometry_sha256": "e063a95303aabb28fc3ed4f4950d73b3a35699bb6fd4655ee133d30a46a520b2",
+  "render_algorithm_sha256": "83acf40729ab6c5eb00b27ff50b5ca3bed4950b576843a04df6a4d10f299eabc",
+  "light_field_sha256": "a55d87c88a53713ae8e35be78a41a88891b41dfa989bebaecdf067f6f9aaf000",
+  "logical_size": [
+    240,
+    44
+  ],
+  "pixel_size": [
+    480,
+    88
+  ],
+  "density": 2,
+  "radius_css": 8,
+  "visible_ring_css": 2,
+  "slice_source_pixels": 16,
+  "slice_css": 8,
+  "center_fill": false,
+  "transparent_center": true,
+  "transparent_inner_strip_css": 6,
+  "encoding": "linear area/coverage filter, unpremultiply, 0EV, sRGB PNG RGBA8",
+  "glow_baked": false,
+  "adaptation": "fixed corners/cross-width; straight segments stretch only along their own edge length; static lighting approximation for changed size/position; >2x is raster enlargement",
+  "vendor_source_meta": "../SoftwareCompany/design/assets/materials/gold-ring-static@2x.meta.json",
+  "metadata_role": "provenance only; runtime loads the local cache directly and never resolves canonical/source paths"
+}

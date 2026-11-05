@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="300" viewBox="0 0 640 300">
+<title>真实单凸半椭圆截面定义</title><desc>椭圆弧和薄壁尺寸是几何定义；填充渐变仅示意体积，不是光谱照明。</desc>
+<defs><linearGradient id="section-preview" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F4F1E8"/><stop offset="1" stop-color="#94702D"/></linearGradient></defs>
+<rect width="640" height="300" fill="#191B1D"/>
+<path d="M80,150 A240,38.4 0 0 1 560,150 V198 H80 Z" fill="url(#section-preview)"/>
+<path d="M80,150 H560 M320,150 V111.6" fill="none" stroke="#B7B0A3" stroke-dasharray="4 4"/>
+<g fill="#F4F1E8" font-family="sans-serif" font-size="14"><text x="32" y="30">半椭圆真实截面：几何精确，渐变为工程示意</text><text x="32" y="62">w=1mm / H=0.08mm / bottom=-0.1mm</text><text x="32" y="245">d=(w/2)(1−cos t), z=H sin t, 0≤t≤π</text><text x="32" y="273">normal从外壁经顶部单调转向内壁；无中心金属面</text></g>
+</svg>

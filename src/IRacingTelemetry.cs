@@ -1,5 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
+using System.IO;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Globalization;
@@ -9,11 +12,15 @@ using System.Text.RegularExpressions;
 // the producer's varHeader table, never from a car-specific fixed layout.
 sealed class IRacingTelemetry {
  readonly Func<long,int,byte[]> read;
+ readonly long connectionEpoch;
  sealed class Variable {public int Type,Offset,Count;public string Unit;}
  readonly Dictionary<string,Variable> variables=new Dictionary<string,Variable>();
  int sessionUpdate=int.MinValue;double? redLine;string carModel;object vehicleGeometry,vehicleIdentity;
  int? tick;int epoch,tableOffset,tableCount,rowLength;long advanced;object cached;
- public IRacingTelemetry(Func<long,int,byte[]> reader){read=reader;}
+ public IRacingTelemetry(Func<long,int,byte[]> reader,long connectionEpoch=0){read=reader;this.connectionEpoch=connectionEpoch;}
+ internal int? Tick{get{return tick;}}
+ internal long? LastAdvance{get{return tick.HasValue?(long?)advanced:null;}}
+ internal bool Disconnected{get;private set;}
  static int I(byte[] b,int p){return BitConverter.ToInt32(b,p);}
  static string Text(byte[] b,int p,int length){return Encoding.ASCII.GetString(b,p,length).Split('\0')[0];}
  static void Require(bool valid){if(!valid)throw new InvalidOperationException("Invalid IRSDK layout");}
@@ -81,9 +88,10 @@ sealed class IRacingTelemetry {
    break;
   }
  }
- public object Poll(long now){
+ public object Poll(long now,long? observedUtc=null){
   var h=read(0,112);Require(h.Length==112&&I(h,0)==2);
-  if((I(h,4)&1)==0){tick=null;cached=null;epoch++;return null;}
+  if((I(h,4)&1)==0){Disconnect();return null;}
+  Disconnected=false;
   int count=I(h,24),offset=I(h,28),buffers=I(h,32),length=I(h,36);
   Require(count>0&&count<=4096&&offset>=112&&buffers>=1&&buffers<=4&&length>0&&length<=1048576);
   if(!tick.HasValue||offset!=tableOffset||count!=tableCount||length!=rowLength){
@@ -96,7 +104,9 @@ sealed class IRacingTelemetry {
   var row=read(rowOffset,length);
   // The producer may have reused this ring-buffer slot while it was copied.
   var after=read(0,112);
-  if(I(after,48+best*16)!=next||I(after,52+best*16)!=rowOffset||I(after,24)!=count||I(after,28)!=offset||I(after,36)!=length||(I(after,4)&1)==0)return now-advanced<=400?cached:null;
+  if((I(after,4)&1)==0){Disconnect();return null;}
+  if(I(after,48+best*16)!=next||I(after,52+best*16)!=rowOffset||I(after,24)!=count||I(after,28)!=offset||I(after,36)!=length)
+   return now-advanced<=400?cached:null;
   tick=next;advanced=now;SessionMetadata(h);
   Func<string,string,double,double,double?> n=(name,unit,lo,hi)=>Number(row,name,unit,lo,hi);
   double? speed=n("Speed","m/s",-200,200),session=n("SessionTime","s",0,1e10);
@@ -108,8 +118,8 @@ sealed class IRacingTelemetry {
   bool? onTrack=Flag(row,"IsOnTrack"),replay=Flag(row,"IsReplayPlaying");
   bool? paused=onTrack==false&&replay==false?(bool?)true:onTrack==true||replay==true?(bool?)false:null;
   uint? warnings=Bits(row,"EngineWarnings","irsdk_EngineWarnings"),flags=Bits(row,"SessionFlags","irsdk_Flags");
-  cached=new Dictionary<string,object>{{"available",true},{"telemetryVersion",2},{"source","iRacing-SDK"},{"carModel",carModel},{"maxRpm",redLine},{"vehicleGeometry",vehicleGeometry},{"vehicleIdentity",vehicleIdentity},{"packet",next},{"sampleTime",session.Value*1000},{"receivedAt",now},
-   {"streamEpoch",epoch+":"+n("SessionUniqueID","",0,int.MaxValue)+":"+n("SessionNum","",0,10000)+":"+n("PlayerCarIdx","",0,1000)},
+  cached=new Dictionary<string,object>{{"available",true},{"telemetryVersion",2},{"source","iRacing-SDK"},{"carModel",carModel},{"maxRpm",redLine},{"vehicleGeometry",vehicleGeometry},{"vehicleIdentity",vehicleIdentity},{"packet",next},{"sampleTime",session.Value*1000},{"receivedAt",observedUtc??now},
+   {"streamEpoch",connectionEpoch+":"+epoch+":"+n("SessionUniqueID","",0,int.MaxValue)+":"+n("SessionNum","",0,10000)+":"+n("PlayerCarIdx","",0,1000)},
    {"speedKmh",Math.Abs(speed.Value)*3.6},{"rpm",n("RPM","revs/min",0,100000)},{"gear",n("Gear","",-1,20)},
    {"shiftLights",new {firstRpm=n("PlayerCarSLFirstRPM","revs/min",0,100000),shiftRpm=n("PlayerCarSLShiftRPM","revs/min",0,100000),lastRpm=n("PlayerCarSLLastRPM","revs/min",0,100000),blinkRpm=n("PlayerCarSLBlinkRPM","revs/min",0,100000),indicator=n("ShiftIndicatorPct","%",0,1)}},
    {"gas",n("Throttle","%",0,1)},{"brake",n("Brake","%",0,1)},{"clutch",1-n("Clutch","%",0,1)},{"handbrake",n("HandbrakeRaw","%",0,1)??n("HandBrake","%",0,1)},
@@ -126,9 +136,113 @@ sealed class IRacingTelemetry {
   return cached;
  }
 
- static readonly object gate=new object();static MemoryMappedFile mapping;static MemoryMappedViewAccessor view;static IRacingTelemetry reader;static long retryAt;
- public static object Current(){lock(gate){long now=DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();try{
-  if(view==null){if(now<retryAt)return null;retryAt=now+1000;mapping=MemoryMappedFile.OpenExisting("Local\\IRSDKMemMapFileName",MemoryMappedFileRights.Read);view=mapping.CreateViewAccessor(0,0,MemoryMappedFileAccess.Read);reader=new IRacingTelemetry((at,size)=>{Require(at>=0&&at<=view.Capacity-size);var b=new byte[size];view.ReadArray(at,b,0,size);return b;});}
-  return reader.Poll(now);
- }catch{if(view!=null)view.Dispose();if(mapping!=null)mapping.Dispose();view=null;mapping=null;reader=null;retryAt=now+1000;return null;}}}
+ void Disconnect(){
+  if(!Disconnected)epoch++;
+  Disconnected=true;tick=null;cached=null;
+ }
+
+ // A mapping owns both the read delegate and its native resources. The
+ // connection can therefore retire them together before reopening by name.
+ internal sealed class Mapping : IDisposable {
+  internal readonly Func<long,int,byte[]> Read;
+  readonly Action close;
+  internal Mapping(Func<long,int,byte[]> read,Action close){Read=read;this.close=close;}
+  public void Dispose(){close();}
+  internal static Mapping Open(){
+   var mapping=MemoryMappedFile.OpenExisting("Local\\IRSDKMemMapFileName",MemoryMappedFileRights.Read);
+   try{
+    var view=mapping.CreateViewAccessor(0,0,MemoryMappedFileAccess.Read);
+    return new Mapping((at,size)=>{
+     Require(at>=0&&at<=view.Capacity-size);
+     var bytes=new byte[size];view.ReadArray(at,bytes,0,size);return bytes;
+    },()=>{try{view.Dispose();}finally{mapping.Dispose();}});
+   }catch{mapping.Dispose();throw;}
+  }
+ }
+
+ internal sealed class Connection {
+  internal const int IdleMs=1000;
+  const int StaleMs=400,RetryMs=1000;
+  readonly Func<Mapping> open;
+  Mapping mapping;
+  IRacingTelemetry reader;
+  long retryAt,openedAt,lastDemand,connectionEpoch;
+  int? probeTick;
+  bool confirmed;
+  string state="unknown",latestError;
+  long? lastSampleAt,latestErrorAt;
+  internal Connection(Func<Mapping> open){this.open=open;}
+
+  internal object Current(long now,long observedUtc){
+   CloseIfIdle(now);
+   lastDemand=now;
+   try{
+    if(mapping==null){
+     if(now<retryAt)return null;
+     mapping=open();openedAt=now;
+     reader=new IRacingTelemetry(mapping.Read,++connectionEpoch);
+    }
+    var sample=reader.Poll(now,observedUtc);
+    if(reader.Disconnected||now-(reader.LastAdvance??openedAt)>StaleMs){
+     state=reader.Disconnected?"unavailable":"expired";
+     Close(now+RetryMs);return null;
+    }
+    if(!confirmed&&reader.Tick.HasValue){
+     int tick=reader.Tick.Value;
+     if(!probeTick.HasValue||unchecked(tick-probeTick.Value)<0)probeTick=tick;
+     else if(sample!=null&&unchecked(tick-probeTick.Value)>0)confirmed=true;
+    }
+    bool available=confirmed&&sample!=null;
+    state=available?"available":"waiting";
+    if(available)lastSampleAt=reader.LastAdvance;
+    return confirmed?sample:null;
+   }catch(FileNotFoundException){state="unavailable";Close(now+RetryMs);return null;}
+   catch(Exception error){
+    state="unavailable";latestErrorAt=now;
+    latestError=error is UnauthorizedAccessException?"sdk-access-denied":
+     error is InvalidOperationException?"invalid-sdk-layout":"sdk-read-error";
+    Close(now+RetryMs);return null;
+   }
+  }
+
+  internal void CloseIfIdle(long now){
+   if(mapping!=null&&now-lastDemand>=IdleMs){state="not-requested";Close(now);}
+  }
+  internal object Diagnostics(long now){
+   string health=state=="available"&&now-lastSampleAt>StaleMs?"expired":
+    state!="unknown"&&now-lastDemand>=IdleMs?"not-requested":state;
+   return new {state=health,lastSampleAgeMs=now-lastSampleAt,
+    observedAgeMs=state=="unknown"?(long?)null:now-lastDemand,latestError,latestErrorAgeMs=now-latestErrorAt};
+  }
+  internal int IdleDelay(long now){return mapping==null?Timeout.Infinite:(int)Math.Max(1,IdleMs-(now-lastDemand));}
+
+  void Close(long nextAttempt){
+   var old=mapping;
+   mapping=null;reader=null;probeTick=null;confirmed=false;retryAt=nextAttempt;
+   if(old!=null)old.Dispose();
+  }
+ }
+
+ static readonly object gate=new object();
+ static readonly Connection connection=new Connection(Mapping.Open);
+ static readonly Timer idleTimer=new Timer(CheckIdle,null,Timeout.Infinite,Timeout.Infinite);
+ static bool idleCheckScheduled;
+ static long ClockMs(){return (long)(Stopwatch.GetTimestamp()*1000.0/Stopwatch.Frequency);}
+ static void CheckIdle(object unused){lock(gate){
+  long now=ClockMs();
+  connection.CloseIfIdle(now);
+  int delay=connection.IdleDelay(now);
+  idleTimer.Change(delay,Timeout.Infinite);
+  idleCheckScheduled=delay!=Timeout.Infinite;
+ }}
+ public static object Diagnostics(){lock(gate)return connection.Diagnostics(ClockMs());}
+ public static object Current(){lock(gate){
+  long now=ClockMs();
+  var sample=connection.Current(now,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+  int delay=connection.IdleDelay(now);
+  if(!idleCheckScheduled&&delay!=Timeout.Infinite){
+   idleTimer.Change(delay,Timeout.Infinite);idleCheckScheduled=true;
+  }
+  return sample;
+ }}
 }

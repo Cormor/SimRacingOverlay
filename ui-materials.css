@@ -1,0 +1,91 @@
+/* 砺行静态金属材质2.3；仅显式采用的C02按钮。
+ * 原生语义primary内面 + 已批准物理边环缓存。
+ * 2x缓存，8CSSpx九宫格角区/切片，只有2CSSpx可见环。
+ * 直边光照随边长伸缩是固定照明近似；权威源见algorithms/gold-ring/。
+ */
+:root {
+  --gold-ring-image: url("assets/materials/gold-ring-static@2x.png");
+  --gold-ring-slice: 16;
+  --gold-ring-frame: 8px;
+  --gold-edge-width: 1.5px;
+  --gold-glow-color: rgba(232,198,106,.42);
+  --gold-glow-radius: 8px;
+}
+:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover,.lx-material-glow-on-hover) {
+  position: relative;
+  --gold-host-border: 1px;
+}
+:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover) {
+  --gold-ring-visible: 0;
+  --gold-native-border-color: var(--border);
+  --gold-body: var(--surface);
+  --gold-selected-mark: var(--accent);
+}
+/* C02 specificity prevents legacy active border from showing through ring alpha. */
+.lx-button:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover) {
+  border-color: var(--gold-native-border-color);
+}
+.lx-material-edge,.lx-material-edge-on-hover {
+  --gold-host-border: var(--gold-edge-width);
+  border-width: var(--gold-edge-width);
+}
+.lx-material-gold {
+  --gold-body: var(--accent-fill,var(--accent));
+  --gold-selected-mark: var(--on-accent-fill,var(--on-accent));
+  background-image: none;
+  background-color: var(--gold-body);
+  color: var(--on-accent-fill,var(--on-accent));
+}
+.lx-material-gold,.lx-material-edge {
+  --gold-ring-visible: 1;
+  --gold-native-border-color: transparent;
+}
+.lx-material-edge-on-hover:hover:not(:disabled):not([aria-disabled="true"]) {
+  --gold-ring-visible: 1;
+  --gold-native-border-color: transparent;
+}
+:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover)::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--gold-host-border));
+  box-sizing: border-box;
+  pointer-events: none;
+  border: var(--gold-ring-frame) solid transparent;
+  border-image-source: var(--gold-ring-image);
+  border-image-slice: var(--gold-ring-slice);
+  border-image-width: var(--gold-ring-frame);
+  border-image-outset: 0;
+  border-image-repeat: stretch;
+  opacity: var(--gold-ring-visible);
+}
+:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover):active:not(:disabled):not([aria-disabled="true"]) {
+  --gold-ring-visible: 0;
+  --gold-native-border-color: var(--accent);
+}
+/* Remove decorative hover trim, not the persistent selection marker. */
+.lx-material-gold:hover:not(:disabled):not([aria-disabled="true"]):not([aria-pressed="true"]) {
+  box-shadow: none;
+}
+/* Freeze foundation hover/active paint for ARIA-disabled as well as native disabled. */
+.lx-button:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover):is(:disabled,[aria-disabled="true"]) {
+  background-color: var(--gold-body);
+  box-shadow: none;
+  opacity: .45;
+  cursor: not-allowed;
+}
+/* Persistent selected state wins even when disabled; gold mark contrasts with fill. */
+.lx-button:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover)[aria-pressed="true"],
+.lx-button:is(.lx-material-gold,.lx-material-edge,.lx-material-edge-on-hover)[aria-pressed="true"]:hover:not(:disabled):not([aria-disabled="true"]) {
+  --gold-ring-visible: 0;
+  --gold-native-border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--gold-selected-mark);
+}
+/* Optional glow does not replace host outline or semantic selected shadow. */
+.lx-material-glow-on-hover:hover:not(:disabled):not([aria-disabled="true"])::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--gold-host-border));
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 var(--gold-glow-radius) var(--gold-glow-color);
+}

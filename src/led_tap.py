@@ -40,14 +40,19 @@ def main():
                     except Exception:pass
             for pid,name in wanted.items():
                 if pid in sessions:continue
+                session=None
                 try:
                     session=dev.attach(pid);script=session.create_script(source)
                     script.on('message',lambda m,d,n=name:message(n,m,d));script.load()
                     sessions[pid]=session
                     print('LED observer attached:',name,pid,flush=True)
-                except Exception as e:last_error=str(e)
+                except Exception as e:
+                    last_error=str(e)
+                    if session is not None:
+                        try:session.detach()
+                        except Exception:pass
             with lock:
-                result=decoder.snapshot();result['attached']=list(wanted.values());result['error']=last_error;result['counts']=counts
+                result=decoder.snapshot();result['attached']=[wanted[pid] for pid in sessions if pid in wanted];result['error']=last_error;result['counts']=counts
             tmp=ROOT/'runtime/led-state.tmp'
             tmp.write_text(json.dumps(result),encoding='utf-8');os.replace(tmp,ROOT/'runtime/led-state.json')
             last_error=''

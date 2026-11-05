@@ -1,0 +1,49 @@
+:root {
+  color-scheme: light dark;
+  --font-sans: Inter, "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+  --text-xs: 12px; --text-sm: 14px; --text-md: 16px; --text-lg: 20px; --text-xl: 24px; --text-display: 32px;
+  --line-tight: 1.25; --line-normal: 1.5; --line-relaxed: 1.7;
+  --space-0: 0; --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-10: 40px; --space-12: 48px;
+  --space-16: 64px; --space-20: 80px;
+  --radius-none: 0; --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px; --radius-pill: 999px;
+  --icon-min: 16px; --icon-default: 20px; --icon-max: 24px; --icon-illustration-max: 48px;
+  --target-min: 24px; --target-default: 44px; --target-comfortable: 48px;
+  --content-max: 1200px; --reading-max: 720px; --sidebar-width: 256px; --layout-gutter: 24px;
+  --breakpoint-compact: 640px; --breakpoint-medium: 900px; --breakpoint-wide: 1200px;
+  --spring-control-mass: 1;
+  --spring-control-stiffness: 900;
+  --spring-control-damping-ratio: 1;
+  --spring-panel-mass: 1;
+  --spring-panel-stiffness: 400;
+  --spring-panel-damping-ratio: 1;
+  --spring-expressive-mass: 1;
+  --spring-expressive-stiffness: 225;
+  --spring-expressive-damping-ratio: 0.85;
+  --spring-rest-displacement: 0.001;
+  --spring-rest-speed: 0.001;
+}
+:root, [data-theme="dark"] {
+  --canvas: #101112; --surface: #191B1D; --surface-raised: #222527;
+  --text: #F4F1E8; --text-muted: #B7B0A3; --border: #555149;
+  --accent: #E8C66A; --on-accent: #17140D;
+  --success: #72D6A4; --on-success: #10251A; --warning: #FFD27A; --on-warning: #2A1C00;
+  --danger: #FF8F86; --on-danger: #32110F; --info: #8CCBFF; --on-info: #0D2233; --focus: #F5CE6A;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #F5F7FA; --surface: #FFFFFF; --surface-raised: #EDF2F7;
+  --text: #1F2937; --text-muted: #526176; --border: #7C8A9D;
+  --accent: #876400; --on-accent: #FFFFFF; --accent-fill: #F4D06F; --on-accent-fill: #252A32;
+  --success: #176B42; --on-success: #FFFFFF; --warning: #705000; --on-warning: #FFFFFF;
+  --danger: #A32E25; --on-danger: #FFFFFF; --info: #145C86; --on-info: #FFFFFF; --focus: #AD7E12;
+}
+html { background: var(--canvas); color: var(--text); font-family: var(--font-sans); font-size: var(--text-md); line-height: var(--line-normal); }
+body { margin: 0; background: var(--canvas); }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, [tabindex]:not([tabindex="-1"]) { touch-action: manipulation; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+}

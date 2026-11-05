@@ -1,0 +1,30 @@
+{
+  "meta": {
+    "role": "instance of shared clear-platinum-light1.0",
+    "authority": "SoftwareCompany/design/palettes/clear-platinum-light.json",
+    "snapshot_only": true
+  },
+  "color": {
+    "light": {
+      "canvas": "#F5F7FA",
+      "surface": "#FFFFFF",
+      "surfaceRaised": "#EDF2F7",
+      "text": "#1F2937",
+      "textMuted": "#526176",
+      "border": "#7C8A9D",
+      "accent": "#876400",
+      "onAccent": "#FFFFFF",
+      "accentFill": "#F4D06F",
+      "onAccentFill": "#252A32",
+      "focus": "#AD7E12",
+      "success": "#176B42",
+      "onSuccess": "#FFFFFF",
+      "warning": "#705000",
+      "onWarning": "#FFFFFF",
+      "danger": "#A32E25",
+      "onDanger": "#FFFFFF",
+      "info": "#145C86",
+      "onInfo": "#FFFFFF"
+    }
+  }
+}

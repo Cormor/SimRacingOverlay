@@ -35,7 +35,7 @@
  class Estimator {
   constructor(){this.body=new Chassis.Observer();this.legacyBody=new LegacyChassis.Observer();this.bodyProfile=null;this.reset();}
   reset(){this.body?.resetTransient();this.legacyBody?.resetTransient();this.history=Array.from({length:4},()=>[]);this.steeringHistory=[];this.lateralResponse=Array(4).fill(null);this.last=null;}
-  pause(){this.reset();this.body?.reset();this.legacyBody?.reset();this.bodyProfile=null;}snapshot(){return {version:VERSION};}restore(){this.reset();}
+  pause(){this.reset();this.body?.reset();this.legacyBody?.reset();this.bodyProfile=null;}
   update(s,now,unloaded,steering,loadKnown){
    if(this.last!==null&&(now<=this.last||now-this.last>WINDOW_MS))this.reset();this.last=now;
    const g=s.game,speed=Math.abs(g.speedKmh||0)/3.6,rest=speed===0,motion=smooth(speed/3),loadAt=i=>Array.isArray(loadKnown)?!!loadKnown[i]:!!loadKnown;

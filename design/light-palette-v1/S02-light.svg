@@ -1,0 +1,436 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1128" height="1048" viewBox="0 0 1128 1048">
+<title>精抛金边2.3完整状态设计</title>
+<desc>原生SVG状态布局加唯一必要PBR环缓存，不是纯矢量。88/144/240/376均用同一240@2x的九宫格；只沿各边长拉伸，固定照明近似。</desc>
+<style>text{font-family:Inter,"Noto Sans CJK SC","Microsoft YaHei UI",sans-serif}</style>
+<defs><filter id="glow" x="-50%" y="-200%" width="200%" height="500%"><feGaussianBlur stdDeviation="4"/></filter>
+<image id="ring-image" width="480" height="88" href="data:image/png;base64,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"/></defs>
+<rect width="1128" height="1048" fill="#F5F7FA"/>
+<text x="24" y="44" text-anchor="start" font-size="26" font-weight="600" fill="#1F2937">精抛金边 · 交互状态</text>
+<text x="24" y="78" text-anchor="start" font-size="16" font-weight="400" fill="#526176">清亮白金 · 原生语义内面 / 同一九宫格物理环</text>
+<text x="228.0" y="126" text-anchor="middle" font-size="14" font-weight="400" fill="#526176">主操作 88</text>
+<text x="368.0" y="126" text-anchor="middle" font-size="14" font-weight="400" fill="#526176">普通 144</text>
+<text x="584.0" y="126" text-anchor="middle" font-size="14" font-weight="400" fill="#526176">主操作 240</text>
+<text x="916.0" y="126" text-anchor="middle" font-size="14" font-weight="400" fill="#526176">流动示例 376</text>
+<text x="24" y="187" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">默认</text>
+<g transform="translate(184,160)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,160)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,160)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,160)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="251" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">悬停</text>
+<g transform="translate(184,224)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,224)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#EDF2F7" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="128" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="128" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,224)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,224)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#EDF2F7" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="360" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="360" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="315" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">键盘焦点</text>
+<g transform="translate(184,288)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+<rect x="-4.5" y="-4.5" width="97" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(296,288)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+<rect x="-4.5" y="-4.5" width="153" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(464,288)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+<rect x="-4.5" y="-4.5" width="249" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(728,288)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+<rect x="-4.5" y="-4.5" width="385" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<text x="24" y="379" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">悬停 + 焦点</text>
+<g transform="translate(184,352)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+<rect x="-4.5" y="-4.5" width="97" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(296,352)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#EDF2F7" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="128" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="128" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="136" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+<rect x="-4.5" y="-4.5" width="153" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(464,352)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+<rect x="-4.5" y="-4.5" width="249" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<g transform="translate(728,352)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#EDF2F7" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="360" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="360" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="368" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+<rect x="-4.5" y="-4.5" width="385" height="53" rx="12.5" fill="none" stroke="#AD7E12" stroke-width="3" />
+</g>
+<text x="24" y="443" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">按住 active</text>
+<g transform="translate(184,416)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<rect x="0.5" y="0.5" width="87" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,416)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#EDF2F7" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,416)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<rect x="0.5" y="0.5" width="239" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,416)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#EDF2F7" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="507" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">持久选中</text>
+<g transform="translate(184,480)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-21"><rect x="1" y="1" width="86" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="88" height="3" fill="#252A32" clip-path="url(#selected-clip-21)"/>
+<rect x="0.5" y="0.5" width="87" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,480)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<defs><clipPath id="selected-clip-22"><rect x="1.5" y="1.5" width="141.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="144" height="3" fill="#876400" clip-path="url(#selected-clip-22)"/>
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,480)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-23"><rect x="1" y="1" width="238" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="240" height="3" fill="#252A32" clip-path="url(#selected-clip-23)"/>
+<rect x="0.5" y="0.5" width="239" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,480)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<defs><clipPath id="selected-clip-24"><rect x="1.5" y="1.5" width="373.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="376" height="3" fill="#876400" clip-path="url(#selected-clip-24)"/>
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="571" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">选中 + 悬停</text>
+<g transform="translate(184,544)" opacity="1">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-25"><rect x="1" y="1" width="86" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="88" height="3" fill="#252A32" clip-path="url(#selected-clip-25)"/>
+<rect x="0.5" y="0.5" width="87" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,544)" opacity="1">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#EDF2F7" />
+<defs><clipPath id="selected-clip-26"><rect x="1.5" y="1.5" width="141.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="144" height="3" fill="#876400" clip-path="url(#selected-clip-26)"/>
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,544)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-27"><rect x="1" y="1" width="238" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="240" height="3" fill="#252A32" clip-path="url(#selected-clip-27)"/>
+<rect x="0.5" y="0.5" width="239" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,544)" opacity="1">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#E8C66A" opacity=".42" filter="url(#glow)"/>
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#EDF2F7" />
+<defs><clipPath id="selected-clip-28"><rect x="1.5" y="1.5" width="373.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="376" height="3" fill="#876400" clip-path="url(#selected-clip-28)"/>
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="635" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">native disabled</text>
+<g transform="translate(184,608)" opacity="0.45">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,608)" opacity="0.45">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,608)" opacity="0.45">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,608)" opacity="0.45">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="699" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">ARIA disabled</text>
+<g transform="translate(184,672)" opacity="0.45">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,672)" opacity="0.45">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,672)" opacity="0.45">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,672)" opacity="0.45">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="763" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">禁用 + 选中</text>
+<g transform="translate(184,736)" opacity="0.45">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-37"><rect x="1" y="1" width="86" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="88" height="3" fill="#252A32" clip-path="url(#selected-clip-37)"/>
+<rect x="0.5" y="0.5" width="87" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,736)" opacity="0.45">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<defs><clipPath id="selected-clip-38"><rect x="1.5" y="1.5" width="141.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="144" height="3" fill="#876400" clip-path="url(#selected-clip-38)"/>
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,736)" opacity="0.45">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<defs><clipPath id="selected-clip-39"><rect x="1" y="1" width="238" height="42" rx="7"/></clipPath></defs>
+<rect x="0" y="40" width="240" height="3" fill="#252A32" clip-path="url(#selected-clip-39)"/>
+<rect x="0.5" y="0.5" width="239" height="43" rx="7.5" fill="none" stroke="#876400" stroke-width="1" />
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,736)" opacity="0.45">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<defs><clipPath id="selected-clip-40"><rect x="1.5" y="1.5" width="373.0" height="41.0" rx="6.5"/></clipPath></defs>
+<rect x="0" y="39.5" width="376" height="3" fill="#876400" clip-path="url(#selected-clip-40)"/>
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#876400" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="827" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">loading</text>
+<g transform="translate(184,800)" opacity="0.45">
+<rect x="0" y="0" width="88" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="72" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="72" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="80" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="44.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">采用</text>
+</g>
+<g transform="translate(296,800)" opacity="0.45">
+<rect x="0" y="0" width="144" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="142.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="72.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">取消</text>
+</g>
+<g transform="translate(464,800)" opacity="0.45">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#F4D06F" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#252A32">保存设置</text>
+</g>
+<g transform="translate(728,800)" opacity="0.45">
+<rect x="0" y="0" width="376" height="44" rx="8" fill="#FFFFFF" />
+<rect x="0.75" y="0.75" width="374.5" height="42.5" rx="7.25" fill="none" stroke="#7C8A9D" stroke-width="1.5" />
+<text x="188.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">属性栏操作</text>
+</g>
+<text x="24" y="917" text-anchor="start" font-size="14" font-weight="400" fill="#1F2937">持续强调（显式）</text>
+<g transform="translate(184,890)" opacity="1">
+<rect x="0" y="0" width="240" height="44" rx="8" fill="#FFFFFF" />
+<svg x="0" y="0" width="8" height="8" viewBox="0 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="0" width="224" height="8" viewBox="16 0 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="0" width="8" height="8" viewBox="464 0 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="8" width="8" height="28" viewBox="0 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="8" width="8" height="28" viewBox="464 16 16 56" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="0" y="36" width="8" height="8" viewBox="0 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="8" y="36" width="224" height="8" viewBox="16 72 448 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<svg x="232" y="36" width="8" height="8" viewBox="464 72 16 16" preserveAspectRatio="none" overflow="hidden"><use href="#ring-image"/></svg>
+<text x="120.0" y="27.0" text-anchor="middle" font-size="16" font-weight="600" fill="#1F2937">持续强调</text>
+</g>
+<text x="448" y="917" text-anchor="start" font-size="14" font-weight="400" fill="#526176">默认即显示环；普通按钮仍只在hover显环</text>
+<text x="24" y="968" text-anchor="start" font-size="14" font-weight="400" fill="#526176">选中底标是持久语义：主操作用深墨色，普通用accent；它不是默认/hover装饰黑线。</text>
+<text x="24" y="1000" text-anchor="start" font-size="14" font-weight="400" fill="#526176">禁用同时冻结native/ARIA hover与active；loading沿既有控制器禁用/文案，图中保留原标签。</text>
+<text x="24" y="1032" text-anchor="start" font-size="14" font-weight="400" fill="#526176">四宽共用240@2x缓存，固定角与边宽，仅沿各自边长拉伸；动态尺寸/位置属于固定光照近似。</text>
+</svg>

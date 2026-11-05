@@ -1,0 +1,76 @@
+{
+  "seed": 20261103,
+  "samples": 64,
+  "f0_linear_rgb": [
+    0.91,
+    0.68,
+    0.31
+  ],
+  "roughness": {
+    "polished": 0.18,
+    "fine_matte": 0.34
+  },
+  "roughness_jitter": 0.004,
+  "button": {
+    "width": 240,
+    "height": 44,
+    "radius": 8,
+    "bevel_width": 2.2,
+    "bevel_height": 0.9,
+    "crown_height": 0.37
+  },
+  "tile": {
+    "width": 480,
+    "height": 240,
+    "radius": 18,
+    "bevel_width": 3.5,
+    "bevel_height": 1.2,
+    "crown_height": 2.0
+  },
+  "environment": {
+    "background": [
+      0.09,
+      0.19
+    ],
+    "key_box": [
+      -0.24,
+      -0.22,
+      0.3,
+      0.23,
+      0.035
+    ],
+    "key_intensity": 2.35,
+    "side_box": [
+      1.3,
+      -0.08,
+      0.12,
+      1.0,
+      0.12
+    ],
+    "side_intensity": 1.5,
+    "fill_box": [
+      -1.15,
+      0.38,
+      0.3,
+      0.7,
+      0.24
+    ],
+    "fill_intensity": 0.38,
+    "negative_box": [
+      0.58,
+      0.48,
+      0.34,
+      0.3,
+      0.2
+    ],
+    "negative_intensity": 0.17
+  },
+  "environment_yaw_degrees": [
+    -12,
+    0,
+    12
+  ],
+  "normal_quantization": 2048,
+  "roughness_quantization": 1024,
+  "tone_mapping": "Reinhard then sRGB"
+}

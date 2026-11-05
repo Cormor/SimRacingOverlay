@@ -33,7 +33,7 @@ const scope={console,URLSearchParams,AbortController,Event,Buffer,location:{sear
  document:{addEventListener(){},getElementById:()=>({getContext:()=>ctx})},Image:class{constructor(){this.complete=true;this.naturalWidth=1315;this.naturalHeight=1197;}async decode(){if(decodeFailure)throw Error('bad image');}},
  requestAnimationFrame(){},setTimeout,clearTimeout,addEventListener(){},dispatchEvent(){},fetch:async url=>{requested.push(url);if(deferred)return deferred;return {ok:true,text:async()=>JSON.stringify({...pack,id:url.split('/').pop().replace('.json','')})};}};
 scope.window=scope;scope.globalThis=scope;vm.createContext(scope);
-for(const file of ['layout.js','overlay.js'])vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),scope);
+for(const file of ['layout.js','telemetry-clock.js','overlay.js'])vm.runInContext(fs.readFileSync(path.join(root,file),'utf8'),scope);
 const run=s=>vm.runInContext(s,scope);
 (async()=>{
  const selected=await scope.WheelFaces.select(face.id);assert.equal(selected.ok,true);assert.equal(scope.WheelFaces.get().id,face.id);assert.equal(scope.OverlayLayout.get().wheel.faceId,face.id);
