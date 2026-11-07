@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "baseline": "Au-Johnson-Christy-1972-fixed-v1",
+  "data": {
+    "repository": "polyanskiy/refractiveindex.info-database",
+    "branch": "main",
+    "path": "database/data/main/Au/nk/Johnson.yml",
+    "doi": "https://doi.org/10.1103/PhysRevB.6.4370",
+    "license": "CC0-1.0",
+    "wavelength_input_unit": "um"
+  },
+  "renderer": {
+    "variant": "llvm_ad_spectral",
+    "max_depth": 8,
+    "hide_emitters": true,
+    "samples_per_pixel": 1024,
+    "samples_per_pass": 64,
+    "seed": 20261103,
+    "film_width": 960,
+    "film_height": 176
+  },
+  "material": {
+    "type": "roughconductor",
+    "distribution": "ggx",
+    "alpha": 0.02,
+    "specular_reflectance": 1.0
+  },
+  "geometry": {
+    "projected_width_mm": 120.0,
+    "projected_height_mm": 22.0,
+    "thickness_mm": 0.8,
+    "corner_radius_mm": 4.0,
+    "bevel_width_mm": 0.8,
+    "bevel_height_mm": 0.4,
+    "corner_segments": 32,
+    "bevel_segments": 8,
+    "tilt_x_degrees": -8.0,
+    "projection_compensation_y": true
+  },
+  "camera": {
+    "origin_m": [0.0, 0.0, 0.20],
+    "target_m": [0.0, 0.0, 0.0],
+    "up": [0.0, 1.0, 0.0],
+    "frame_width_m": 0.132
+  },
+  "lighting": {
+    "spectrum": "d65",
+    "environment_scale": 0.02,
+    "areas": [
+      {"id": "key", "center_m": [0.0, 0.082, 0.25], "size_m": [0.140, 0.036], "radiance_scale": 1.0},
+      {"id": "fill", "center_m": [0.045, 0.072, 0.25], "size_m": [0.015, 0.050], "radiance_scale": 0.18}
+    ]
+  },
+  "display": {
+    "exposure_ev": 0.0,
+    "native_width": 240,
+    "native_height": 44,
+    "crop_to_projected_front": true,
+    "encoding": "sRGB after linear area/coverage filtering"
+  }
+}

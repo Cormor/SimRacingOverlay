@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "baseline": "Au-Johnson-Christy-1972-common-layout-v1.1",
+  "data": {
+    "snapshot_directory": "../layout-v1_6/data",
+    "expected_sha256": "9f4bdab6bd49f7c6a1c48b5fb5482c7448caf4b6de39594a34ecd66dcf592774",
+    "wavelength_input_unit": "um"
+  },
+  "board": {"width": 512, "height": 256, "metres_per_pixel": 0.0005},
+  "controls": [
+    {"id": "small", "x": 32, "y": 32, "width": 144, "height": 44},
+    {"id": "medium", "x": 32, "y": 106, "width": 240, "height": 44},
+    {"id": "wide", "x": 32, "y": 180, "width": 376, "height": 44}
+  ],
+  "renderer": {"variant": "llvm_ad_spectral", "max_depth": 8, "hide_emitters": true, "samples_per_pixel": 1024, "samples_per_pass": 64, "seed": 20261103, "film_width": 1024, "film_height": 512, "cpu_thread_limit": 8},
+  "material": {"type": "roughconductor", "distribution": "ggx", "alpha": 0.006, "specular_reflectance": 1.0},
+  "geometry": {"thickness_mm": 0.8, "corner_radius_mm": 4.0, "bevel_width_mm": 0.8, "bevel_height_mm": 0.4, "corner_segments": 32, "bevel_segments": 8, "tilt_x_degrees": -8.0, "projection_compensation_y": true},
+  "camera": {"origin_m": [0.0, 0.0, 0.20], "target_m": [0.0, 0.0, 0.0], "up": [0.0, 1.0, 0.0], "frame_width_m": 0.256},
+  "lighting": {"spectrum": "d65", "environment_scale": 0.02, "areas": [{"id": "common_key", "center_m": [0.015, 0.140, 0.25], "size_m": [0.400, 0.26163], "rotation_z_degrees": -45.0, "radiance_scale": 1.0}]},
+  "display": {"exposure_ev": 0.0, "encoding": "sRGB after linear area/coverage filtering"}
+}

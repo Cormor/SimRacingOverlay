@@ -13,7 +13,14 @@ Interceptor.attach(address,{
    if(a[0]===0x7e&&((a[2]===0x3f&&a[3]===0x17&&[0x19,0x1a,0x1b,0x1c,0x1d,0x1f,0x27].includes(a[4]))||(a[2]===0x43&&[0x10,0x17].includes(a[3])&&[0x7c,0x7d].includes(a[4])))){this.packet=a.buffer;counts.led++;}
   }catch(e){}
  },
- onLeave(ret){if(this.packet)send({kind:'led',accepted:!ret.isNull()},this.packet);}
+ onLeave(ret){
+  if(!this.packet)return;
+  // WriteFile returns BOOL; NtWriteFile returns signed NTSTATUS. NT_SUCCESS
+  // includes STATUS_PENDING: accepted means accepted, not I/O completion or
+  // a physical LED acknowledgement.
+  const accepted=key==='ntwrite'?ret.toInt32()>=0:!ret.isNull();
+  send({kind:'led',accepted},this.packet);
+ }
 });
 }
 hook('kernelbase.dll','WriteFile',1,2,'write');

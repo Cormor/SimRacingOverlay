@@ -10,7 +10,8 @@ static class NativeMotionTelemetry {
  static double? Number(object v,double lo,double hi){double n;if(v==null||!double.TryParse(Convert.ToString(v,System.Globalization.CultureInfo.InvariantCulture),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out n)||double.IsNaN(n)||double.IsInfinity(n)||n<lo||n>hi)return null;return n;}
  static double? Num(Dictionary<string,object> d,string k,double lo,double hi){return Number(Get(d,k),lo,hi);}
  static double?[] Four(Dictionary<string,object> d,string k,double lo,double hi){var a=Get(d,k) as IList;return a!=null&&a.Count==4?Enumerable.Range(0,4).Select(i=>Number(a[i],lo,hi)).ToArray():null;}
- static double[] Vec(Dictionary<string,object> d,string k,double limit){var a=Get(d,k) as IList;if(a==null||a.Count!=3)return null;var v=Enumerable.Range(0,3).Select(i=>Number(a[i],-limit,limit)).ToArray();return v.All(x=>x.HasValue)?v.Select(x=>x.Value).ToArray():null;}
+ static double[] Vec(Dictionary<string,object> d,string k,double limit){return Vec(Get(d,k),limit);}
+ static double[] Vec(object value,double limit){var a=value as IList;if(a==null||a.Count!=3)return null;var v=Enumerable.Range(0,3).Select(i=>Number(a[i],-limit,limit)).ToArray();return v.All(x=>x.HasValue)?v.Select(x=>x.Value).ToArray():null;}
  static double[] Unit(double[] a){if(a==null)return null;double n=Math.Sqrt(a.Sum(x=>x*x));return n>20000&&n<45000?a.Select(x=>x/n).ToArray():null;}
  public static bool Supported(Dictionary<string,object> r){
   if(!Num(r,"frame",0,uint.MaxValue).HasValue||!Num(r,"time",0,1e9).HasValue)return false;
@@ -18,6 +19,15 @@ static class NativeMotionTelemetry {
  }
  public static string FrameKey(Dictionary<string,object> r){return "native:"+Convert.ToString(Get(r,"session"))+":"+Convert.ToString(Get(r,"frame"));}
  public static bool Coherent(Dictionary<string,object> r){return Num(r,"frameBefore",0,uint.MaxValue)==Num(r,"frame",0,uint.MaxValue);}
+ public static bool ValidSpeed(double kmh){return kmh>=0&&kmh<=650;}
+ static double SpeedKmh(double[] velocity){return Math.Sqrt(velocity.Sum(x=>x*x))*3.6;}
+ public static bool IsValidSpeed(object value){var v=Vec(value,250);return v!=null&&ValidSpeed(SpeedKmh(v));}
+ public static bool HasLocalSpeed(Dictionary<string,object> raw){return IsValidSpeed(Get(raw,"localVelocity"));}
+ static bool NearFrame(double? frame,double? other){
+  if(!frame.HasValue||!other.HasValue)return false;
+  int delta=unchecked((int)((uint)frame.Value-(uint)other.Value));
+  return delta>=-3&&delta<=3;
+ }
  public static void Enrich(Dictionary<string,object> g,Dictionary<string,object> r){
   var ratios=Four(r,"ratio",-100,1000);var angles=Four(r,"angle",-Math.PI,Math.PI);
   var loads=Four(r,"load",0,100000);var fx=Four(r,"fx",-200000,200000);var fy=Four(r,"fy",-200000,200000);var speed=Four(r,"speedMs",-400,400);
@@ -32,7 +42,7 @@ static class NativeMotionTelemetry {
   if(forward!=null&&right!=null&&Math.Abs(forward.Zip(right,(a,b)=>a*b).Sum())>.15)right=null;
   var velocity=Vec(r,"velocity",250);var lv=Vec(r,"localVelocity",250);
   var frame=Num(r,"frame",0,uint.MaxValue);var wf=Num(r,"worldFrame",0,uint.MaxValue);
-  bool worldFresh=frame.HasValue&&wf.HasValue&&Math.Abs(frame.Value-wf.Value)<=3;
+  bool worldFresh=NearFrame(frame,wf);
   g["source"]="SimHub-native-motion";g["telemetryVersion"]=2;g["nativePacket"]=frame;g["streamEpoch"]=Get(r,"session");
   g["receivedAt"]=g["sampleTime"];g["sampleTime"]=Num(r,"time",0,1e9)*1000;
   // This schema reports local X / lateral G left-positive, while worldRight and
@@ -42,11 +52,11 @@ static class NativeMotionTelemetry {
   g["velocity"]=worldFresh?velocity:null;
   g["roadBasis"]=worldFresh&&forward!=null&&right!=null?new {forward=forward,right=right}:null;
   g["roadWheelAngle"]=Num(r,"roadWheelAngle",-Math.PI/2,Math.PI/2);
-  var acc=Vec(r,"accG",30);g["accG"]=acc==null?null:new[]{-acc[0],acc[1],acc[2]};
+  var acc=worldFresh?Vec(r,"accG",30):null;g["accG"]=acc==null?null:new[]{-acc[0],acc[1],acc[2]};
   g["accGFrame"]="body";
   // Continuous native velocity avoids integer-km/h quantization in short derivatives.
-  if(worldFresh&&velocity!=null)g["speedKmh"]=Math.Sqrt(velocity.Sum(x=>x*x))*3.6;
-  else if(lv!=null)g["speedKmh"]=Math.Sqrt(lv.Sum(x=>x*x))*3.6;
+  if(worldFresh&&velocity!=null&&ValidSpeed(SpeedKmh(velocity)))g["speedKmh"]=SpeedKmh(velocity);
+  else if(lv!=null&&ValidSpeed(SpeedKmh(lv)))g["speedKmh"]=SpeedKmh(lv);
   g["capabilities"]=new {nativeMotion=true,forces=fx!=null&&fy!=null&&fx.Any(x=>x.HasValue)&&fy.Any(x=>x.HasValue),loads=loads!=null,slipRatio=ratios!=null&&ratios.Any(x=>x.HasValue),slipAngle=angles!=null&&angles.Any(x=>x.HasValue),roadOrientation=worldFresh&&forward!=null&&right!=null,linearWheelSpeed=speed!=null&&speed.Any(x=>x.HasValue)};
   g["fieldPolicy"]="schema-detected MotionEx; SI units and FL/FR/RL/RR order; independent optional fields; no synthetic contact geometry";
  }

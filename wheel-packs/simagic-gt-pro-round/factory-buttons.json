@@ -1,0 +1,211 @@
+{
+  "source": "https://image.simagic.com/profile/upload/2023/08/08/SimProManager1.3.2.exe",
+  "softwareSha256": "8523f9a2738a39231175300dce2ae029b34acf74cc0aa12b58bf4a9c3bec71f6",
+  "basis": "Official 2023 factory defaults, 1-based HID/DirectInput button numbers; user remaps may override",
+  "controls": [
+    {
+      "id": "button-upper-left-outer",
+      "label": "左上外侧灰按钮",
+      "buttons": [
+        7
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:228-229"
+    },
+    {
+      "id": "button-upper-left-inner",
+      "label": "左上内侧灰按钮",
+      "buttons": [
+        8
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:230-231"
+    },
+    {
+      "id": "button-upper-right-inner",
+      "label": "右上内侧灰按钮",
+      "buttons": [
+        3
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:220-221"
+    },
+    {
+      "id": "button-upper-right-outer",
+      "label": "右上外侧灰按钮",
+      "buttons": [
+        4
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:222-223"
+    },
+    {
+      "id": "button-lower-left-outer",
+      "label": "左下外侧灰按钮",
+      "buttons": [
+        6
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:226-227"
+    },
+    {
+      "id": "button-lower-left-inner",
+      "label": "左下内侧灰按钮",
+      "buttons": [
+        5
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:224-225"
+    },
+    {
+      "id": "button-lower-right-inner",
+      "label": "右下内侧灰按钮",
+      "buttons": [
+        1
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:216-217"
+    },
+    {
+      "id": "button-lower-right-outer",
+      "label": "右下外侧灰按钮",
+      "buttons": [
+        2
+      ],
+      "kind": "push-button",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:218-219"
+    },
+    {
+      "id": "thumb-upper-left",
+      "label": "左上红色拇指旋钮",
+      "buttons": [
+        33,
+        34
+      ],
+      "kind": "two-direction-encoder",
+      "actions": {
+        "upperMarker": 33,
+        "lowerMarker": 34
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:262-265"
+    },
+    {
+      "id": "thumb-upper-right",
+      "label": "右上红色拇指旋钮",
+      "buttons": [
+        35,
+        36
+      ],
+      "kind": "two-direction-encoder",
+      "actions": {
+        "upperMarker": 35,
+        "lowerMarker": 36
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:266-269"
+    },
+    {
+      "id": "abs-lower-left",
+      "label": "左下ABS红色旋钮",
+      "buttons": [
+        11,
+        12
+      ],
+      "kind": "two-direction-encoder",
+      "actions": {
+        "upperLeftMarker": 11,
+        "lowerRightMarker": 12
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:236-239"
+    },
+    {
+      "id": "tc-lower-right",
+      "label": "右下TC红色旋钮",
+      "buttons": [
+        9,
+        10
+      ],
+      "kind": "two-direction-encoder",
+      "actions": {
+        "lowerLeftMarker": 9,
+        "upperRightMarker": 10
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:232-235"
+    },
+    {
+      "id": "funky-lower-left",
+      "label": "左下黑色七向开关",
+      "buttons": [
+        17,
+        18,
+        20,
+        22,
+        23,
+        31,
+        32
+      ],
+      "kind": "seven-way-switch",
+      "actions": {
+        "press": 18,
+        "left": 17,
+        "down": 20,
+        "up": 22,
+        "right": 23,
+        "rotateLeft": 32,
+        "rotateRight": 31
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:366-377,388-391; rotation icons:178-181"
+    },
+    {
+      "id": "funky-lower-right",
+      "label": "右下黑色七向开关",
+      "buttons": [
+        15,
+        16,
+        25,
+        26,
+        28,
+        29,
+        30
+      ],
+      "kind": "seven-way-switch",
+      "actions": {
+        "press": 26,
+        "left": 25,
+        "down": 28,
+        "up": 29,
+        "right": 30,
+        "rotateLeft": 16,
+        "rotateRight": 15
+      },
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:362-365,378-387; rotation icons:178-181"
+    },
+    {
+      "id": "paddle-right",
+      "label": "右侧换挡拨片",
+      "buttons": [
+        13
+      ],
+      "kind": "paddle",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:240-241"
+    },
+    {
+      "id": "paddle-left",
+      "label": "左侧换挡拨片",
+      "buttons": [
+        14
+      ],
+      "kind": "paddle",
+      "actions": {},
+      "evidence": "decompiled/Cbutton_matrix_GT.cs:242-243"
+    }
+  ]
+}

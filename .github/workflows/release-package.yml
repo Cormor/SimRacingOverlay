@@ -20,22 +20,53 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
       - name: Download unchanged runtime from verified base release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           New-Item -ItemType Directory -Force build/base | Out-Null
           gh release download v1.0.1 --pattern SimRacingOverlay-1.0.1-Windows-x64.zip --dir build/base
-          python tools/runtime_from_release.py build/base/SimRacingOverlay-1.0.1-Windows-x64.zip a7e5825666aef4ba2bf07112e89ea5a9bb8612cf8d1cbb74a8f748baeca9bea1 --rebuild-native
-      - name: Build current native bridge and launcher
-        run: ./tools/build.ps1
+          python tools/runtime_from_release.py build/base/SimRacingOverlay-1.0.1-Windows-x64.zip a7e5825666aef4ba2bf07112e89ea5a9bb8612cf8d1cbb74a8f748baeca9bea1 --rebuild-all
+      - name: Prepare official SimHub SDK
+        run: |
+          $archive = 'build/SimHub.9.13.3.zip'
+          Invoke-WebRequest 'https://github.com/SHWotever/SimHub/releases/download/9.13.3/SimHub.9.13.3.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5a7a3f747e06d6f11dae2baa6db096718bc540f91512b54ffa55dc4652a725bd') { throw 'SimHub archive SHA256 mismatch.' }
+          Expand-Archive $archive -DestinationPath build/simhub-installer
+          $installers = @(Get-ChildItem build/simhub-installer -Filter '*.exe' -Recurse)
+          if ($installers.Count -ne 1) { throw 'Expected one SimHub installer.' }
+          $sdk = Join-Path $pwd 'build/simhub-sdk'
+          $installer = Start-Process -FilePath $installers[0].FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-',('/DIR="' + $sdk + '"')) -Wait -PassThru
+          if ($installer.ExitCode -ne 0) { throw 'SimHub SDK installation failed.' }
+          foreach ($name in @('SimHub.Plugins.dll','GameReaderCommon.dll')) { if (!(Test-Path (Join-Path $sdk $name))) { throw ('Missing SDK assembly: ' + $name) } }
+      - name: Build bridge, launcher, plugin and observer from current source
+        run: |
+          python -m pip install frida==17.2.17 pyinstaller==6.16.0
+          ./tools/build.ps1 -SimHubPath (Join-Path $pwd 'build/simhub-sdk') -BuildObserver
       - name: Verify layout and algorithms
         run: |
+          node src/test_wheel_profiles.js
+          node src/test_wheel_store.js
+          node src/test_electron_wheel_transport.js
+          node src/test_layout_editor.js
           node src/test_relative_layout.js
+          node src/test_dashboard_cache.js
+          node src/test_render_clocks.js
           node src/verify_algorithm_baseline.js
           ./tools/test-telemetry.ps1
       - name: Package sources and runtime
         run: python tools/package.py
+      - name: Build Windows setup executable
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          python tools/package-app.py --native runtime --output build/windows-app
+          ./tools/build-installer.ps1 -Payload build/windows-app -OutputPath "dist/SimRacingOverlay-$version-Setup.exe" -ScratchPath build/installer
+          $setup = Get-Item "dist/SimRacingOverlay-$version-Setup.exe"
+          $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Add-Content dist/SHA256SUMS.txt "$hash  $($setup.Name)" -Encoding ascii
       - name: Upload complete package to draft release
         env:
           GH_TOKEN: ${{ github.token }}

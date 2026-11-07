@@ -7,16 +7,17 @@ app.commandLine.appendSwitch('no-proxy-server');
 const server=http.createServer((req,res)=>{
  const relative=decodeURIComponent(req.url.split('?')[0]).slice(1)||'index.html';
  if(relative.includes('..')){res.writeHead(403);res.end();return;}
- const file=path.join(root,relative);
+ const fromBaseline=process.argv.includes('--compare-baseline')&&req.headers.referer?.includes('baseline=1')&&['overlay.js','dashboard.js'].includes(relative);
+ const file=path.join(root,fromBaseline?'baseline':'',relative);
  if(!fs.existsSync(file)){res.writeHead(404);res.end();return;}
  res.setHeader('Content-Type',relative.endsWith('.js')?'text/javascript':relative.endsWith('.css')?'text/css':relative.endsWith('.png')?'image/png':relative.endsWith('.json')?'application/json':'text/html');res.end(fs.readFileSync(file));
 });
 const windows=[],errors=[];
 async function run(port){
- for(const retained of [false,true]){
+ for(const variant of ['full','retained',...(process.argv.includes('--compare-baseline')?['baseline']:[])]){
   const win=new BrowserWindow({show:false,width:1000,height:850,transparent:true,backgroundColor:'#00000000',webPreferences:{backgroundThrottling:false}});windows.push(win);
   win.webContents.on('console-message',(_event,details)=>{if(details?.level==='error')errors.push(details.message);});
-  await win.loadURL(`http://127.0.0.1:${port}/?qa=1${retained?'&retained=1':''}`);
+  await win.loadURL(`http://127.0.0.1:${port}/?qa=1${variant==='retained'?'&retained=1':variant==='baseline'?'&baseline=1':''}`);
   await win.webContents.executeJavaScript('image.decode()');
   await win.webContents.executeJavaScript("OverlayLayout.setDesktopStage({width:1000,height:850,originX:0,originY:0,scale:1});window.__clock=1000;Object.defineProperty(performance,'now',{value:()=>__clock});");
  }
@@ -54,17 +55,39 @@ async function run(port){
   }`);
   await Promise.all(windows.map(w=>w.webContents.executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')));
   const captures=await Promise.all(windows.map(w=>w.webContents.capturePage()));
-  const [a,b]=captures.map(c=>c.toBitmap());let total=0,large=0;assert.equal(a.length,b.length);
+  const [a,b,baseline]=captures.map(c=>c.toBitmap());let total=0,large=0;assert.equal(a.length,b.length);
   for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-b[i]);total+=d;if(d>16)large++;}
-  const row={step,meanChannelError:total/a.length,largeErrorFraction:large/a.length};comparisons.push(row);
+  const row={step,meanChannelError:total/a.length,largeErrorFraction:large/a.length};
+  if(baseline){let difference=0,largeDifference=0;for(let i=0;i<a.length;i++){const d=Math.abs(a[i]-baseline[i]);difference+=d;if(d>16)largeDifference++;}row.baselineMeanChannelError=difference/a.length;row.baselineLargeErrorFraction=largeDifference/a.length;}
+  comparisons.push(row);
   assert(row.meanChannelError<.05&&row.largeErrorFraction<.00005,JSON.stringify(row));
   if(step<4)fs.writeFileSync(path.join(out,`wheel-${step*45}.png`),captures[1].toPNG());
+ }
+ const layered=[];
+ // Use real rasterization with a non-uniform scale and distinct image/text alpha.
+ for(const win of windows.slice(0,2))await win.webContents.executeJavaScript(`{
+  __clock=5000;const l=OverlayLayout.get();for(const c of Object.values(l.controls))c.enabled=false;
+  Object.assign(l.controls.wheel,{enabled:true,x:0,y:0,sx:.8,sy:1.2,opacity:.6,imageOpacity:.7,textOpacity:.2});l.wheel.dashboardMode='auto';OverlayLayout.set(l);
+  overlayDiagnostics.setTestState({connected:true,angle:0,buttons:[19],leds:{available:true,buttons:Array(20).fill('#5ca7b0'),knobs:Array(4).fill('#314650')},game:{available:true,source:'render-fixture',packet:100,rpm:5000,maxRpm:8000,speedKmh:123,gear:3,wheels:[]}},__clock);overlayDiagnostics.renderTest(__clock);
+ }`);
+ const layerBefore=await windows[1].webContents.executeJavaScript('overlayDiagnostics.getWheelFace()');
+ for(const measured of [15,45,90,135,180,null,0]){
+  for(const win of windows.slice(0,2))await win.webContents.executeJavaScript(`angle=${measured};overlayDiagnostics.paintTest();`);
+  await Promise.all(windows.slice(0,2).map(w=>w.webContents.executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')));
+  const captures=await Promise.all(windows.slice(0,2).map(w=>w.webContents.capturePage())),[a,b]=captures.map(c=>c.toBitmap());let difference=0;
+  for(let i=0;i<a.length;i++)difference+=Math.abs(a[i]-b[i]);assert.equal(difference,0,'layered full/retained pixels at '+measured);
+  const status=await windows[1].webContents.executeJavaScript('({layers:overlayDiagnostics.getWheelFace(),display:overlayDiagnostics.getDisplay()})');
+  assert.equal(status.layers.photo.builds,layerBefore.photo.builds,'steering never rebuilds photo at non-uniform scale');
+  assert.equal(status.layers.lights.builds,layerBefore.lights.builds,'steering never rebuilds lights at non-uniform scale');
+  assert.equal(status.display.angle,measured);assert.equal(status.display.pose,measured??0);layered.push({angle:measured,display:status.display,dashboardBuilds:status.layers.dashboard.builds});
+  if(measured===45)fs.writeFileSync(path.join(out,'layered-alpha-45.png'),captures[1].toPNG());
  }
  const before=await windows[1].webContents.executeJavaScript('overlayDiagnostics.getPaint()');
  await windows[1].webContents.executeJavaScript('overlayDiagnostics.paintTest();overlayDiagnostics.paintTest();');
  const after=await windows[1].webContents.executeJavaScript('overlayDiagnostics.getPaint()');
  assert.equal(after.composites,before.composites,'identical prepared scene retains pixels');
  assert.equal(errors.length,0,JSON.stringify(errors));
- const result={roundness,geometry,comparisons,static:{before,after},errors};fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({roundness,comparisons,static:result.static,errors}));
+ const layers=await windows[1].webContents.executeJavaScript('overlayDiagnostics.getWheelFace()');
+ const result={roundness,geometry,comparisons,layered,static:{before,after},layers,errors};fs.writeFileSync(path.join(out,'results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({roundness,comparisons,layered,static:result.static,layers,errors}));
 }
 app.whenReady().then(async()=>{try{await new Promise(r=>server.listen(0,'127.0.0.1',r));await run(server.address().port);}catch(e){console.error(e);process.exitCode=1;}finally{for(const w of windows)w.destroy();server.close();app.exit(process.exitCode||0);}});

@@ -7,3 +7,11 @@
 /settings.json
 *.pyc
 __pycache__/
+
+# Local downloaded faces and machine-specific handoff records
+/assets/wheel-packs/
+/docs/ARCHITECTURE-REVIEW.md
+/docs/CODE-REVIEW.md
+/docs/UI-DELIVERY.md
+/docs/UI-REVIEW.md
+/docs/UI-WORKLOG.md

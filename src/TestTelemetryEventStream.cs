@@ -10,8 +10,9 @@ using System.Web.Script.Serialization;
 class TestTelemetryEventStream {
  sealed class Sink:Stream {
   public List<int> Frames=new List<int>();public int Delay;public bool Failure;
+  public Action<string> BeforeWrite;
   public override void Write(byte[] b,int at,int n){
-   string text=Encoding.UTF8.GetString(b,at,n);if(!text.StartsWith("data: "))return;
+   string text=Encoding.UTF8.GetString(b,at,n);if(BeforeWrite!=null)BeforeWrite(text);if(!text.StartsWith("data: "))return;
    if(Frames.Count>=8)throw new IOException("test viewer disconnected");
    var d=new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(text.Substring(6));
    object v;if(d.TryGetValue("n",out v))Frames.Add(Convert.ToInt32(v));else {Failure=true;Frames.Add(-1);}
@@ -43,6 +44,41 @@ class TestTelemetryEventStream {
   int stopped=captured;Thread.Sleep(100);Check(captured<=stopped+1,"producer stops capturing without viewers");
   int attempts=0;var recovery=new TelemetryEventStream(()=>{if(Interlocked.Increment(ref attempts)==1)throw new Exception("fixture failure");return new {connected=true,n=attempts};});
   var errors=new Sink();Check(Start(recovery,errors).Join(4000)&&errors.Failure&&errors.Frames[1]>0,"capture failure emits disconnected state then recovers");
+  var entered=new ManualResetEvent(false);
+  var release=new ManualResetEvent(false);
+  int reads=0;
+  var owner=new TelemetryEventStream(()=>{
+   int number=Interlocked.Increment(ref reads);
+   entered.Set();
+   if(number==1)release.WaitOne();
+   return new {connected=true,n=number};
+  });
+  byte[] httpOne=null,httpTwo=null;
+  var httpThread=new Thread(()=>httpOne=owner.ReadHttp()){IsBackground=true};httpThread.Start();
+  Check(entered.WaitOne(1000),"HTTP wakes the shared producer without SSE");
+  var httpThread2=new Thread(()=>httpTwo=owner.ReadHttp()){IsBackground=true};httpThread2.Start();
+  var sseFirst=new ManualResetEvent(false);string wire=null;
+  var firstSink=new Sink{BeforeWrite=text=>{
+   if(text.StartsWith("data: ")){wire=text; sseFirst.Set();throw new IOException("close first subscriber");}
+  }};
+  var sharedSse=Start(owner,firstSink);
+  Check(SpinWait.SpinUntil(()=>owner.HasClients,1000),"SSE joins the same producer");
+  release.Set();
+  Check(httpThread.Join(1000)&&httpThread2.Join(1000)&&sseFirst.WaitOne(1000)&&sharedSse.Join(1000),"shared publication reaches HTTP and SSE");
+  Check(httpOne!=null&&object.ReferenceEquals(httpOne,httpTwo)&&wire=="data: "+Encoding.UTF8.GetString(httpOne)+"\n\n",
+   "concurrent HTTP requests and SSE reuse the one encoded frame");
+
+  var unblock=new ManualResetEvent(false);
+  var blocked=new TelemetryEventStream(()=>{unblock.WaitOne();return new {connected=true};});
+  Check(blocked.ReadHttp()==null,"blocked capture cannot keep a cold HTTP request open");
+  unblock.Set();
+  var comment=new ManualResetEvent(false);
+  var pushOnly=new TelemetryEventStream(null,10);
+  var silentSink=new Sink{BeforeWrite=text=>{
+   if(text.StartsWith(":")){comment.Set();throw new IOException("closed quiet connection");}
+  }};
+  var silent=Start(pushOnly,silentSink);
+  Check(comment.WaitOne(1000)&&silent.Join(1000)&&!pushOnly.HasClients,"quiet SSE heartbeat releases a disconnected writer");
   var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;
   var server=new Thread(()=>{using(var client=listener.AcceptTcpClient())using(var stream=client.GetStream()){
    var request=new StreamReader(stream,Encoding.ASCII,false,1024,true);while(!string.IsNullOrEmpty(request.ReadLine())){}
@@ -54,6 +90,6 @@ class TestTelemetryEventStream {
    for(int i=0;i<2;i++){string line;do{line=reader.ReadLine();}while(line=="");Check(line!=null&&line.StartsWith("data: ")&&line.Contains("\"connected\":true"),"native HTTP frame parses immediately");}
   }
   listener.Stop();Check(server.Join(2000),"closed HTTP viewer releases its writer");
-  Console.WriteLine("PASS: one producer shared by viewers; bounded latest-frame delivery; idle suspension; capture failure/recovery; native SSE HTTP framing and disconnect.");
+  Console.WriteLine("PASS: HTTP and SSE share one encoded frame; cold wait/heartbeat bounded; latest-frame delivery; idle suspension; capture failure/recovery; native SSE HTTP framing and disconnect.");
  }
 }

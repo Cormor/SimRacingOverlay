@@ -219,6 +219,7 @@
       "textOpacity": 1,
       "imageOpacity": 1
     },
+    "dashboard": {"x":0,"y":0,"sx":1,"sy":1,"rotation":0,"z":17,"enabled":false,"locked":false,"opacity":1,"textOpacity":1,"imageOpacity":1},
     "flags": {
       "x": 0.0,
       "y": 0.0,

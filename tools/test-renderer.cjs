@@ -16,7 +16,8 @@ baseline.set('overlay.js',Buffer.from(original.replace('setTimeout(poll,16)','se
 const preload=path.join(out,'raf-preload.cjs');
 fs.writeFileSync(preload,`window.requestAnimationFrame=callback=>setTimeout(()=>callback(performance.now()),1000/${renderHz});window.cancelAnimationFrame=clearTimeout;`);
 let mode='baseline',fixture='native',start=Date.now(),refuseEvents=false,suspendEvents=false;const streams=new Set();
-function state(){
+function state(){return {...rawState(),transport:{epoch:'renderer-fixture',publishedMs:performance.now()}};}
+function rawState(){
  const t=Date.now()-start,packet=Math.floor(t/(1000/60));
  if(fixture==='body'){
   const s=JSON.parse(fs.readFileSync(path.join(root,'build','telemetry-tests','iracing.json')));
@@ -32,7 +33,7 @@ const server=http.createServer((req,res)=>{
   res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache'});res.write(': ready\n\n');
   let next=performance.now(),timer,closed=false;const send=()=>{if(closed||res.writableEnded||res.destroyed)return;if(!suspendEvents)res.write('data: '+JSON.stringify(state())+'\n\n');next+=1000/60;if(performance.now()-next>50)next=performance.now();timer=setTimeout(send,Math.max(1,next-performance.now()));};send();req.on('close',()=>{closed=true;streams.delete(res);clearTimeout(timer);});return;
  }
- if(file==='state'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(state()));return;}
+ if(file==='state'||file==='clock'){const payload=file==='state'?state():{};res.setHeader('X-Overlay-Clock-Epoch','renderer-fixture');res.setHeader('X-Overlay-Clock-Ms',String(performance.now()));res.setHeader('Content-Type','application/json');res.end(JSON.stringify(payload));return;}
  if(file.includes('..')){res.writeHead(403);res.end();return;}
  let source=mode==='baseline'&&baseline.has(file)?baseline.get(file):fs.existsSync(path.join(root,file))?fs.readFileSync(path.join(root,file)):null;
  if(mode==='candidate'&&req.headers.referer?.includes('materials=reference')){
@@ -58,7 +59,7 @@ async function measure(port,which){
  if(process.argv.includes('--profile')){const {profile}=await win.webContents.debugger.sendCommand('Profiler.stop');win.webContents.debugger.detach();fs.writeFileSync(path.join(out,which+'.cpuprofile'),JSON.stringify(profile));result.hotspots=profile.nodes.filter(n=>n.hitCount).sort((a,b)=>b.hitCount-a.hitCount).slice(0,15).map(n=>({name:n.callFrame.functionName,url:n.callFrame.url,hits:n.hitCount,line:n.callFrame.lineNumber}));}
  if(which==='candidate'){
   result.paint=await win.webContents.executeJavaScript('overlayDiagnostics.getPaint()');
-  result.workerVerified=await win.webContents.executeJavaScript(`(async()=>{const client=new TelemetryProcessor.Client(()=>{throw Error('unexpected worker fallback')},()=>new Worker('telemetry-worker.js'),true);const result=await client.run(overlayDiagnostics.getState(),performance.now());client.worker.terminate();return result.mode==='worker'&&result.view.fresh;})()`);
+  result.workerVerified=await win.webContents.executeJavaScript(`(async()=>{const client=new TelemetryProcessor.Client({createModel:()=>{throw Error('unexpected worker fallback')},createWorker:()=>new Worker('telemetry-worker.js')});const result=await client.run(overlayDiagnostics.getState(),performance.now());client.dispose();return result.ok&&result.mode==='worker'&&result.view.fresh;})()`);
   if(!result.workerVerified)throw Error('Real worker failed');
   if(!['main','worker'].includes(after.processingMode)||after.errors||errors.length)throw Error('Worker renderer failed: '+JSON.stringify(result));
   fixture='body';await pause(1200);

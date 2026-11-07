@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "baseline": "Au-Johnson-Christy-1972-half-ellipse-brighter-environment-v1.5",
+  "data": {
+    "snapshot_directory": "data",
+    "expected_sha256": "9f4bdab6bd49f7c6a1c48b5fb5482c7448caf4b6de39594a34ecd66dcf592774",
+    "wavelength_input_unit": "um"
+  },
+  "board": {
+    "width": 512,
+    "height": 256,
+    "metres_per_pixel": 0.0005
+  },
+  "controls": [
+    {
+      "id": "small",
+      "x": 32,
+      "y": 32,
+      "width": 144,
+      "height": 44
+    },
+    {
+      "id": "medium",
+      "x": 32,
+      "y": 106,
+      "width": 240,
+      "height": 44
+    },
+    {
+      "id": "wide",
+      "x": 32,
+      "y": 180,
+      "width": 376,
+      "height": 44
+    }
+  ],
+  "renderer": {
+    "variant": "llvm_ad_spectral",
+    "max_depth": 8,
+    "hide_emitters": true,
+    "samples_per_pixel": 1024,
+    "samples_per_pass": 64,
+    "seed": 20261103,
+    "film_width": 1024,
+    "film_height": 512,
+    "cpu_thread_limit": 8
+  },
+  "material": {
+    "type": "roughconductor",
+    "distribution": "ggx",
+    "alpha": 0.006,
+    "specular_reflectance": 1.0
+  },
+  "geometry": {
+    "corner_radius_mm": 4.0,
+    "corner_segments": 32,
+    "tilt_x_degrees": -8.0,
+    "projection_compensation_y": true,
+    "edge_width_mm": 1.0,
+    "edge_crown_height_mm": 0.08,
+    "edge_bottom_z_mm": -0.1,
+    "edge_width_segments": 16,
+    "perimeter_max_step_css": 4.0,
+    "edge_profile": "half_ellipse"
+  },
+  "camera": {
+    "origin_m": [
+      0.0,
+      0.0,
+      0.2
+    ],
+    "target_m": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "up": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "frame_width_m": 0.256
+  },
+  "lighting": {
+    "spectrum": "d65",
+    "environment_scale": 0.16,
+    "areas": [
+      {
+        "id": "common_key",
+        "center_m": [
+          0.015,
+          0.14,
+          0.25
+        ],
+        "size_m": [
+          0.4,
+          0.26163
+        ],
+        "rotation_z_degrees": -45.0,
+        "radiance_scale": 1.0
+      }
+    ]
+  },
+  "display": {
+    "exposure_ev": 0.0,
+    "encoding": "sRGB after linear area/coverage filtering"
+  },
+  "surface_target": "clean_new_fine_polished_bright_finish_not_measured_process",
+  "vector_preview": {
+    "role": "editable_geometry_and_engineering_gradient_not_spectral_solution",
+    "gradient_colors": [
+      "#B69142",
+      "#E8C66A",
+      "#F4F1E8"
+    ],
+    "gradient_mapping": "v1.5 brighter dark engineering boundary / tokens accent / tokens text: engineering visual approximation, not sampled PBR"
+  }
+}
