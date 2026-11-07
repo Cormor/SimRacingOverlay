@@ -1,8 +1,8 @@
-﻿param([switch]$FromSimHub,[switch]$FromHost,[switch]$NoDesktop,[switch]$OpenLayout)
+﻿param([switch]$FromSimHub,[switch]$FromHost,[switch]$NoDesktop,[switch]$OpenLayout,[switch]$OpenManager)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot 'tools\Lifecycle.ps1')
 $root=[OverlayLifecyclePaths]::Canonical($PSScriptRoot)
-if($OpenLayout -and $NoDesktop){throw 'Opening layout requires the desktop.'}
+if(($OpenLayout -or $OpenManager) -and $NoDesktop){throw 'Opening layout requires the desktop.'}
 $mutex=Enter-OverlayLock
 $ready=$false
 try {
@@ -39,14 +39,14 @@ try {
  }
  Set-OverlayLifecycle $root 'running' @{bridgePid=$bridgeId;desktopPid=$desktopId;port=$port}
  $ready=$true
- if($OpenLayout){
+ if($OpenLayout -or $OpenManager){
   $requestFile=Join-Path $root 'runtime\desktop-control.json';$resultFile=Join-Path $root 'runtime\desktop-control-result.json'
   $requestId=[Guid]::NewGuid().ToString('N')
   try{
-   Write-OverlayJson $requestFile @{id=$requestId;session=$desktopControl.session;pid=$desktopId;action='open-layout';expiresAt=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+5000}
+   Write-OverlayJson $requestFile @{id=$requestId;session=$desktopControl.session;pid=$desktopId;action=$(if($OpenLayout){'open-layout'}else{'open-manager'});expiresAt=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+5000}
    $clock=[Diagnostics.Stopwatch]::StartNew()
    do{
-    try{$result=Get-Content -LiteralPath $resultFile -Raw|ConvertFrom-Json}catch{$result=$null}
+    try{$result=Get-Content -Encoding UTF8 -LiteralPath $resultFile -Raw|ConvertFrom-Json}catch{$result=$null}
     if($result.id -eq $requestId -and $result.session -eq $desktopControl.session){
      if($result.state -ne 'opened'){throw $result.error}
      break
@@ -56,7 +56,7 @@ try {
    if($result.id -ne $requestId -or $result.session -ne $desktopControl.session){throw 'The desktop did not confirm opening layout.'}
   }finally{
    foreach($file in @($requestFile,$resultFile)){
-    try{$data=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json;if($data.id -eq $requestId){[IO.File]::Delete($file)}}catch{}
+    try{$data=Get-Content -Encoding UTF8 -LiteralPath $file -Raw|ConvertFrom-Json;if($data.id -eq $requestId){[IO.File]::Delete($file)}}catch{}
    }
   }
  }

@@ -59,6 +59,14 @@ jobs:
           ./tools/test-telemetry.ps1
       - name: Package sources and runtime
         run: python tools/package.py
+      - name: Build Windows setup executable
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          python tools/package-app.py --native runtime --output build/windows-app
+          ./tools/build-installer.ps1 -Payload build/windows-app -OutputPath "dist/SimRacingOverlay-$version-Setup.exe" -ScratchPath build/installer
+          $setup = Get-Item "dist/SimRacingOverlay-$version-Setup.exe"
+          $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Add-Content dist/SHA256SUMS.txt "$hash  $($setup.Name)" -Encoding ascii
       - name: Upload complete package to draft release
         env:
           GH_TOKEN: ${{ github.token }}

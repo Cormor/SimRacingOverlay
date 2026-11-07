@@ -1,5 +1,5 @@
 ﻿# Shared by the program's own start/stop/install entry points; no background work.
-if(-not ('OverlayLifecyclePaths' -as [type])) { Add-Type -Path (Join-Path (Split-Path $PSScriptRoot) 'src\LifecyclePaths.cs') }
+if(-not ('OverlayLifecyclePaths' -as [type])) { Add-Type -Path (Join-Path (Split-Path $PSScriptRoot) 'runtime\OverlayLifecycle.dll') }
 
 function Write-OverlayJson([string]$File,$Value) {
  $temp=$File+'.'+[Guid]::NewGuid().ToString('N')+'.tmp'
@@ -21,7 +21,7 @@ function Exit-OverlayLock($Mutex) {if($Mutex){try{$Mutex.ReleaseMutex()}finally{
 function Get-OverlayProcesses([string]$Root,[string]$Kind) {
  $relative=switch($Kind){'bridge'{'runtime\SimRacingBridge.exe'}'desktop'{'runtime\electron\electron.exe'}'observer'{'runtime\MozaLedObserver.exe'}'watcher'{'runtime\SimRacingLauncher.exe'}default{throw 'Unknown overlay process kind.'}}
  $exe=Join-Path $Root $relative;$name=[IO.Path]::GetFileName($exe)
- foreach($item in @(Get-CimInstance Win32_Process -Filter "Name='$name'")) {
+ foreach($item in @([OverlayLifecyclePaths]::Processes($exe,($Kind -in @('desktop','watcher'))))) {
   if(!$item.ExecutablePath){continue}
   try {
    if(![OverlayLifecyclePaths]::Same($item.ExecutablePath,$exe)){continue}
@@ -32,14 +32,14 @@ function Get-OverlayProcesses([string]$Root,[string]$Kind) {
  }
 }
 function Read-OverlaySettings([string]$Root) {
- $cfg=Get-Content -LiteralPath (Join-Path $Root 'settings.json') -Raw|ConvertFrom-Json
+ $cfg=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $Root 'settings.json') -Raw|ConvertFrom-Json
  $port=0
  if(![int]::TryParse([string]$cfg.httpPort,[ref]$port) -or $port -lt 1024 -or $port -gt 65534){throw 'settings.json httpPort must be an integer from 1024 to 65534.'}
  return $cfg
 }
 function Get-OverlayListener([int]$Port) {
- # Get-NetTCPConnection emits ObjectNotFound for an unused port.
- @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+ # Native owner table retains port ownership checks without CIM startup.
+ @([OverlayLifecyclePaths]::Listeners($Port))
 }
 function Wait-OverlayBridge([string]$Root,[int]$Port,[Diagnostics.Process]$Started=$null) {
  $clock=[Diagnostics.Stopwatch]::StartNew();$last='The bridge has not opened its HTTP listener.'
@@ -74,7 +74,7 @@ function Stop-OverlayDesktop([string]$Root) {
   try {
    $clock=[Diagnostics.Stopwatch]::StartNew();$status=$null
    while(!$process.HasExited -and $clock.Elapsed.TotalSeconds -lt 5) {
-    try{$status=Get-Content -LiteralPath (Join-Path $Root 'runtime\desktop-status.json') -Raw|ConvertFrom-Json}catch{$status=$null}
+    try{$status=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $Root 'runtime\desktop-status.json') -Raw|ConvertFrom-Json}catch{$status=$null}
     if($status.control.pid -eq $item.ProcessId -and $status.control.session -match '^[a-f0-9]{32}$'){break}
     Start-Sleep -Milliseconds 100
    }
@@ -84,14 +84,14 @@ function Stop-OverlayDesktop([string]$Root) {
    $clock.Restart()
    while(!$process.WaitForExit(100)) {
     if([IO.File]::Exists($resultFile)) {
-     try{$result=Get-Content -LiteralPath $resultFile -Raw|ConvertFrom-Json}catch{$result=$null}
+     try{$result=Get-Content -Encoding UTF8 -LiteralPath $resultFile -Raw|ConvertFrom-Json}catch{$result=$null}
      if($result.id -eq $requestId -and $result.session -eq $status.control.session -and $result.state -eq 'cancelled'){throw ('The desktop kept the current edit open: '+$result.error)}
     }
     if($clock.Elapsed.TotalSeconds -ge 30){throw 'The desktop did not confirm a normal close. No process was forcibly terminated; the close request has expired.'}
    }
   } finally {
    $process.Dispose()
-   if($sent){foreach($file in @($requestFile,$resultFile)){if([IO.File]::Exists($file)){try{$data=Get-Content -LiteralPath $file -Raw|ConvertFrom-Json;if($data.id -eq $requestId){[IO.File]::Delete($file)}}catch{}}}}
+   if($sent){foreach($file in @($requestFile,$resultFile)){if([IO.File]::Exists($file)){try{$data=Get-Content -Encoding UTF8 -LiteralPath $file -Raw|ConvertFrom-Json;if($data.id -eq $requestId){[IO.File]::Delete($file)}}catch{}}}}
   }
  }
 }
@@ -140,7 +140,7 @@ function Wait-OverlayDesktop([string]$Root,[int]$ProcessId) {
  try {
   while($clock.Elapsed.TotalSeconds -lt 20){
    if($process.HasExited){throw ('The desktop exited before becoming ready (exit '+$process.ExitCode+').')}
-   try{$status=Get-Content -LiteralPath (Join-Path $Root 'runtime\desktop-status.json') -Raw|ConvertFrom-Json}catch{$status=$null}
+   try{$status=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $Root 'runtime\desktop-status.json') -Raw|ConvertFrom-Json}catch{$status=$null}
    if($status.control.pid -eq $ProcessId -and $status.control.session -match '^[a-f0-9]{32}$' -and $status.control.ready -eq $true){return $status.control}
    Start-Sleep -Milliseconds 100
   }

@@ -155,7 +155,7 @@ class Launcher {
    root=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".."));bool watch=false;
    for(int i=0;i<args.Length;i++){if(args[i]=="--watch")watch=true;else if(args[i]=="--root"&&i+1<args.Length)root=args[++i];else throw new ArgumentException("Unknown launcher argument: "+args[i]);}
    root=OverlayLifecyclePaths.Canonical(root);
-   if(!watch){using(var command=new Command("Start-Overlay.ps1")){command.Process.WaitForExit();if(command.Process.ExitCode!=0){Status("start-failed",command.Output);System.Windows.Forms.MessageBox.Show(command.Output,"SimRacingOverlay did not start");}return command.Process.ExitCode;}}
+   if(!watch){using(var command=new Command("Start-Overlay.ps1","-OpenManager")){command.Process.WaitForExit();if(command.Process.ExitCode!=0){Status("start-failed",command.Output);System.Windows.Forms.MessageBox.Show(command.Output,"SimRacingOverlay did not start");}return command.Process.ExitCode;}}
    string identity;using(var sha=SHA256.Create())identity=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(root.ToLowerInvariant()))).Replace("-","");
    bool first;using(var mutex=new Mutex(true,"Local\\SimRacingOverlay.StartupWatcher."+identity,out first)){if(!first)return 0;RunWatcher();}
    return 0;

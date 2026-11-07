@@ -62,4 +62,60 @@ public static class OverlayLifecyclePaths {
   for(int i=1;i+1<args.Length;i++)if(args[i]=="--root")return Canonical(args[i+1]);
   return args.Length==0?null:Canonical(Path.Combine(Path.GetDirectoryName(args[0]),".."));
  }
+ [DllImport("ntdll.dll")]
+ static extern int NtQueryInformationProcess(IntPtr process,int info,IntPtr buffer,int length,out int needed);
+ static string ProcessCommandLine(System.Diagnostics.Process process) {
+  int needed;NtQueryInformationProcess(process.Handle,60,IntPtr.Zero,0,out needed);
+  if(needed<=0)throw new Win32Exception("Cannot read process command line: "+process.Id);
+  IntPtr buffer=Marshal.AllocHGlobal(needed);
+  try {
+   int status=NtQueryInformationProcess(process.Handle,60,buffer,needed,out needed);
+   if(status!=0)throw new Win32Exception("Cannot read process command line: "+process.Id+" status="+status);
+   int length=(ushort)Marshal.ReadInt16(buffer);
+   IntPtr text=Marshal.ReadIntPtr(buffer,IntPtr.Size==8?8:4);
+   return Marshal.PtrToStringUni(text,length/2);
+  }finally{Marshal.FreeHGlobal(buffer);}
+ }
+ public sealed class ProcessInfo {
+  public int ProcessId; public string ExecutablePath; public string CommandLine;
+ }
+ public static ProcessInfo[] Processes(string executable, bool commandLine) {
+  var result=new System.Collections.Generic.List<ProcessInfo>();
+  foreach(var process in System.Diagnostics.Process.GetProcessesByName(Path.GetFileNameWithoutExtension(executable))) {
+   using(process) {
+    try {
+     string path=process.MainModule.FileName;
+     if(!Same(path,executable))continue;
+     string line=null;
+     if(commandLine)line=ProcessCommandLine(process);
+     result.Add(new ProcessInfo{ProcessId=process.Id,ExecutablePath=path,CommandLine=line});
+    }catch(ArgumentException){}catch(InvalidOperationException){}catch(Win32Exception){}
+   }
+  }
+  return result.ToArray();
+ }
+ [DllImport("iphlpapi.dll",SetLastError=true)]
+ static extern uint GetExtendedTcpTable(IntPtr table,ref int size,bool order,int family,int tableClass,uint reserved);
+ public sealed class ListenerInfo { public int OwningProcess; }
+ public static ListenerInfo[] Listeners(int port) {
+  var result=new System.Collections.Generic.List<ListenerInfo>();
+  foreach(int family in new[]{2,23}) {
+   int size=0;uint code=GetExtendedTcpTable(IntPtr.Zero,ref size,false,family,3,0);
+   if(code!=0&&code!=122)throw new Win32Exception((int)code);
+   IntPtr buffer=Marshal.AllocHGlobal(size);
+   try {
+    code=GetExtendedTcpTable(buffer,ref size,false,family,3,0);
+    if(code==122){Marshal.FreeHGlobal(buffer);buffer=IntPtr.Zero;buffer=Marshal.AllocHGlobal(size);code=GetExtendedTcpTable(buffer,ref size,false,family,3,0);}
+    if(code!=0)throw new Win32Exception((int)code);
+    int count=Marshal.ReadInt32(buffer),stride=family==2?24:56,portOffset=family==2?8:20,pidOffset=family==2?20:52;
+    for(int row=0;row<count;row++){
+     IntPtr item=IntPtr.Add(buffer,4+row*stride);
+     int value=Marshal.ReadByte(item,portOffset)*256+Marshal.ReadByte(item,portOffset+1);
+     if(value==port)result.Add(new ListenerInfo{OwningProcess=Marshal.ReadInt32(item,pidOffset)});
+    }
+   }finally{if(buffer!=IntPtr.Zero)Marshal.FreeHGlobal(buffer);}
+  }
+  return result.ToArray();
+ }
+
 }

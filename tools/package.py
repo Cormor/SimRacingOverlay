@@ -31,7 +31,7 @@ for group in ('sources','binaries'):
 for p in source:
  inspect_file(p);rel=p.relative_to(ROOT)
  for target in (stage/rel,stage/'source'/rel):target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,target)
-for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll','native-build.json'):
+for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll','native-build.json'):
  p=ROOT/'runtime'/name
  inspect_file(p);target=stage/'runtime'/name;target.parent.mkdir(exist_ok=True);shutil.copyfile(p,target)
 shutil.copytree(ROOT/'runtime/electron',stage/'runtime/electron')
