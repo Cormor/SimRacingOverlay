@@ -70,3 +70,26 @@ body.direct-edit-mode .edit-footer .lx-status{font-size:12px;line-height:1.35}
 
 .component-preview-pair .mini-stage{width:100%;min-width:0;max-width:100%;aspect-ratio:var(--component-preview-aspect,1);min-height:160px}
 .component-preview-pair canvas{width:100%;min-width:0;max-width:100%}
+
+/* 支持入口：仅边缘引导，页面内容和扫码图保持静止。 */
+@property --support-edge-angle{syntax:"<angle>";inherits:false;initial-value:0deg}
+.app-nav .support-nav{position:relative;border-color:var(--accent);margin-top:8px}
+.app-nav .support-nav::after{content:"";position:absolute;inset:-1px;border-radius:inherit;padding:2px;pointer-events:none;background:conic-gradient(from var(--support-edge-angle),var(--accent) 0deg,transparent 65deg,transparent 240deg,var(--accent) 310deg,#fff3d1 345deg,var(--accent) 360deg);-webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:support-edge-turn 5s linear infinite}
+@keyframes support-edge-turn{to{--support-edge-angle:360deg}}
+.manager-motion-paused .support-nav::after{animation-play-state:paused}
+@media(prefers-reduced-motion:reduce){.app-nav .support-nav::after{animation:none}}
+.support-cards{display:grid;grid-template-columns:repeat(2,minmax(0,320px));gap:24px;align-items:start;justify-content:center}
+.support-card{text-align:center;min-width:0}
+.support-card h2{margin-bottom:16px}
+.support-page{display:flex;flex-direction:column;--support-code-background:#fff;--support-code-filter:invert(0)}
+.support-page .support-heading{flex:none}
+.support-page .support-cards{flex:none;margin-block:auto;padding-block:8px}
+html[data-theme=dark] .support-page:not(.support-standard){--support-code-background:#000;--support-code-filter:invert(1)}
+.support-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}.support-heading h1{margin:0}
+html[data-theme=light] #supportStandard{display:none}
+.support-code{background:var(--support-code-background);padding:24px;aspect-ratio:1;display:grid;place-items:center;border-radius:8px;overflow:hidden}
+.support-qr{position:relative;width:100%;aspect-ratio:1}
+.support-qr img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain}
+.support-code-pattern{filter:var(--support-code-filter)}
+.support-amount{color:var(--accent);font:600 28px/1.3 var(--font-sans);font-variant-numeric:tabular-nums;margin:20px 0 0}
+@media(max-width:760px){.support-cards{grid-template-columns:minmax(0,320px)}}
