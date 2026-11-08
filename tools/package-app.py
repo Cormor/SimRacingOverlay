@@ -27,7 +27,7 @@ for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll
 for name in ('SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'):
  copy(root/'runtime'/name,Path('runtime')/name)
 shutil.copytree(root/'runtime/electron',out/'runtime/electron')
-for name in ('INSTALL.md','UPDATES.md','COMPONENT-PLUGINS.md','COMPONENT-EXPERIENCE.md','COMPONENT-ACCESSIBILITY.md'):
+for name in ('INSTALL.md','UPDATES.md','COMPONENT-PLUGINS.md','COMPONENT-EXPERIENCE.md','COMPONENT-ACCESSIBILITY.md','SUPPORT-DEVELOPMENT.md'):
  if (root/'docs'/name).exists():copy(root/'docs'/name,Path('docs')/name)
 # A ready-to-import current baseline is shipped as an editable compatibility example.
 algorithm_names=('telemetry-context.js','tyre-response.js','steering-advisor.js','reserve.js','grip.js','handling.js','legacy-chassis-response.js','chassis-response.js','suspension-contact.js','realtime-response.js','feedback-research.js','pedal-traction.js','assist.js','g-ball.js')
