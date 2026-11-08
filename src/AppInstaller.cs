@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -11,6 +12,9 @@ using System.Windows.Forms;
 // The same small native host builds Setup and the installed uninstaller.
 internal static class AppInstaller
 {
+    [DllImport("user32.dll")]
+    static extern bool ShowWindow(IntPtr window, int command);
+
     static string Option(string[] args, string key, string fallback)
     {
         for (int i = 0; i < args.Length; i++) if (args[i] == key) {
@@ -155,6 +159,10 @@ internal static class AppInstaller
                     } finally { busy = false; close.Enabled = true; }
                 };
                 form.Controls.AddRange(new Control[] { intro, path, browse, status, action, close });
+                // Older update clients passed SW_HIDE in STARTUPINFO. The first
+                // WinForms show consumes that flag; explicitly show the requested
+                // interactive installer afterwards. Quiet installs never enter here.
+                form.Shown += delegate { ShowWindow(form.Handle, 1); form.Activate(); };
                 Application.Run(form);
                 return 0;
             }
