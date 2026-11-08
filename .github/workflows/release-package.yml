@@ -6,6 +6,10 @@ on:
         description: Existing draft release ID
         required: true
         type: string
+      source_ref:
+        description: Exact source ref to package; defaults to the dispatched workflow ref
+        required: false
+        type: string
       hotfix_base:
         description: Optional exact installed base version for an algorithm-compatible hotfix
         required: false
@@ -24,6 +28,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -37,7 +43,7 @@ jobs:
       - name: Prepare official SimHub SDK
         run: |
           $archive = 'build/SimHub.9.13.3.zip'
-          Invoke-WebRequest 'https://github.com/SHWotever/SimHub/releases/download/9.13.3/SimHub.9.13.3.zip' -OutFile $archive
+          Invoke-WebRequest 'https://api.github.com/repos/SHWotever/SimHub/releases/assets/668512796' -Headers @{Accept='application/octet-stream'; 'User-Agent'='SimRacingOverlay-release'} -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '5a7a3f747e06d6f11dae2baa6db096718bc540f91512b54ffa55dc4652a725bd') { throw 'SimHub archive SHA256 mismatch.' }
           Expand-Archive $archive -DestinationPath build/simhub-installer
           $installers = @(Get-ChildItem build/simhub-installer -Filter '*.exe' -Recurse)
