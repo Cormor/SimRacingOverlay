@@ -48,6 +48,8 @@ iRacing 90 秒原始 SDK 录制共 5,377 帧：
 
 ## 维护入口
 
+`verify_algorithm_baseline.js` 核对历史存档摘要及存档内源码与配套 JSON 的一致性，不把当前源码与历史版本逐文件等同。当前发行身份由精确 Git tag、原生构建回执及安装包清单绑定；算法语义仍按实际改动及对应证据判断。
+
 ```text
 node src/verify_algorithm_baseline.js
 node src/test_chassis_response.js

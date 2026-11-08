@@ -44,8 +44,8 @@
 - `assets/components/` 是用户包与选择，完整升级保留；不兼容须明确反馈，不能无声清选择。组件页应用保留管理窗草稿；包导入应用、传统算法切换和完整安装继续先处理当前编辑。示例入口 `examples/pedal-motion.component.json`，编辑源 `examples/component-package/`，打包工具 `tools/package-components.cjs`。
 - 更新实现见 `desktop-updates.js` / `docs/UPDATES.md`，正式来源固定为 Cormor/SimRacingOverlay Releases；默认仅检查并显示托盘右上角标记，应用与安装必须是用户动作。完整 Setup 沿同一安装身份，代码包只允许声明的模块/组件边界，不能覆盖 desktop/preload/native 或用户配置。
 - 传统十四算法 hotfix 由 `module-loader.js` 解析 `assets/modules/active.json`，作为既有脚本兼容格式，不约束组件插件扩展轴。官方代码包来源、用户本地代码与数据盘面分别表达；本地实验版本不能屏蔽后续官方更新。完整升级清传统算法活动选择但保留代际文件，组件目录和选择继续保留。
-- Release 工作流生成 `update-manifest.json`，可按精确 baseVersion 生成传统 hotfix；`tools/package-hotfix.py --setup ... --hotfix ...` 同时支持盘面或组件元数据。公开发布以单独任务授权为准，不为验收创建公开假版本。安装包源码由 `tools/package-app.py` 明确收录，排除用户包目录并包含示例与使用文档。
+- Release 工作流生成 `update-manifest.json`，可按精确 baseVersion 生成传统 hotfix；`tools/package-hotfix.py --setup ... --hotfix ...` 同时支持盘面或组件元数据。公开发布沿用本项目交付授权及用户明确例外，不为验收创建公开假版本。安装包源码由 `tools/package-app.py` 明确收录，排除用户包目录并包含示例与使用文档。
 
 ## GitHub 交付
 
-- 用户要求完整交付到 GitHub 时，除非明确只交付分支、只创建 PR 或暂不合入，应将已审查的提交合入 main 并确认远端包含该提交；创建分支或 PR 不等同已合入。创建 tag、Release 和上传安装包按单独发布授权执行。
+- 本项目软件交付默认包括提交、经 PR 合入 main，以及发布正式 GitHub Release 和可下载的 Windows Setup 安装附件；除非用户明确限定只交付分支、只创建 PR、暂不合入或暂不发布，不等待用户再次提醒。Release 从精确 tag 的干净源码构建，确认远端 main 包含发布提交；分支推送、PR 创建、合入和 Release 发布分别记录。已发布 tag 与安装附件保持身份，不重制或替换。
