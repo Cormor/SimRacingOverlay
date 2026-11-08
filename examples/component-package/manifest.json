@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "kind": "simracingoverlay-components",
+  "id": "example.pedal-motion",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "entries": ["plugin.js"],
+  "definitions": [{
+    "kind": "animation",
+    "id": "example.calm",
+    "version": "1.0.0",
+    "label": "柔和呼吸（示例）",
+    "description": "1200毫秒周期，只改变反馈的明暗。",
+    "contract": "pedal-traction.v1",
+    "requires": ["signal", "duration"],
+    "provides": []
+  }]
+}

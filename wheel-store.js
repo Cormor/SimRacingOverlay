@@ -92,7 +92,11 @@ function createStore({root,catalog,validate,request}={}){
   const url=allowedUrl(value.url,true).href;
   entries.set(value.id,Object.freeze({id:value.id,name:value.name,url,sha256:value.sha256.toLowerCase()}));
  }
- function entry(id){if(typeof id!=='string'||!entries.has(id))throw Error('未找到可下载盘面');return entries.get(id);}
+ function localEntries(){
+  try{const file=safePath(path.join(directory,'local-index.json'));const data=JSON.parse(fs.readFileSync(file,'utf8'));if(!Array.isArray(data)||data.length>64)return [];return data.filter(v=>v&&ID.test(v.id)&&v.id!=='default'&&typeof v.name==='string'&&/^[a-f0-9]{64}$/.test(v.sha256));}catch{return [];}
+ }
+ function entry(id){if(typeof id!=='string')throw Error('未找到盘面');const local=localEntries().find(v=>v.id===id);if(local)return {...local,source:local.source==='official'?'official':'local'};if(!entries.has(id))throw Error('未找到可下载盘面');return {...entries.get(id),source:'official'};}
+
  function checked(bytes,item){
   if(bytes.length>MAX_BYTES)throw Error('盘面文件超过 8 MiB');
   if(crypto.createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw Error('盘面文件校验失败，请重试下载');
@@ -110,7 +114,16 @@ function createStore({root,catalog,validate,request}={}){
    return checked(fs.readFileSync(file),item);
   }catch{return null;}
  }
- function list(){return [...entries.values()].map(item=>({id:item.id,name:item.name,installed:read(item.id)!==null,sha256:item.sha256}));}
+ function list(){const merged=new Map([...entries.values()].map(item=>[item.id,{...item,source:'official'}]));for(const item of localEntries())merged.set(item.id,{...item,source:item.source==='official'?'official':'local'});return [...merged.values()].map(item=>({id:item.id,name:item.name,installed:read(item.id)!==null,sha256:item.sha256,source:item.source}));}
+ function importLocal(input,source='local'){
+  const data=validate(input);checkPng(data.image);const bytes=Buffer.from(JSON.stringify(data)+'\n');if(bytes.length>MAX_BYTES)throw Error('盘面文件超过 8 MiB');
+  safePath(directory);fs.mkdirSync(directory,{recursive:true});
+  const file=safePath(path.join(directory,data.id+'.json')),index=safePath(path.join(directory,'local-index.json'));
+  const records=localEntries().filter(v=>v.id!==data.id);if(records.length>=64)throw Error('本地盘面最多保留 64 款');records.push({id:data.id,name:data.name,source:source==='official'?'official':'local',sha256:crypto.createHash('sha256').update(bytes).digest('hex')});
+  function write(target,content){const temp=target+'.'+crypto.randomBytes(8).toString('hex')+'.tmp';try{fs.writeFileSync(temp,content,{flag:'wx'});safePath(target);fs.renameSync(temp,target);}finally{try{fs.unlinkSync(temp);}catch{}}}
+  write(file,bytes);write(index,JSON.stringify(records,null,2)+'\n');return {ok:true,id:data.id,source:'local'};
+ }
+
  async function installPack(item){
   if(read(item.id)!==null)return {ok:true,id:item.id};
   const bytes=await download(item.url,request);
@@ -132,7 +145,7 @@ function createStore({root,catalog,validate,request}={}){
   const promise=installPack(item).finally(()=>inflight.delete(id));
   inflight.set(id,promise);return promise;
  }
- return {install,list,read};
+ return {install,list,read,importLocal};
 }
 
 // Bridge Chromium's proxy-aware transport into the same bounded, per-hop downloader.
@@ -153,7 +166,13 @@ function createElectronRequest(net){
   });
   request.on('response',incoming=>{
    if(stopped)return;
-   response=new PassThrough();response.statusCode=incoming.statusCode;response.headers=incoming.headers;
+   response=new PassThrough();response.statusCode=incoming.statusCode;response.headers={...incoming.headers};
+   // Chromium delivers decoded bytes but preserves wire compression headers.
+   // Expose decoded-stream lengths to both bounded downloaders; raw HTTPS and
+   // identity responses retain their exact Content-Length checks.
+   const encodings=String(response.headers['content-encoding']||'').toLowerCase().split(',').map(v=>v.trim()).filter(Boolean);
+   if(encodings.length&&encodings.every(v=>['gzip','br','deflate','zstd'].includes(v))){delete response.headers['content-length'];delete response.headers['content-encoding'];}
+
    response.on('close',()=>{if(!response.complete)handle.destroy();});
    incoming.on('end',()=>{if(!stopped){response.complete=true;response.end();}});
    incoming.on('error',error=>{if(!stopped)response.destroy(error);});

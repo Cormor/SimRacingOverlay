@@ -1,6 +1,6 @@
 # Windows 安装与复建
 
-正式入口是 `SimRacingOverlay-1.4.1-Setup.exe`。双击后选择安装目录并安装；默认位置为当前用户文档目录下的 `AI\Apps\SimRacingOverlay`，无需管理员权限。完成后在开始菜单打开 **SimRacingOverlay**，默认进入管理窗口。安装界面与启动入口均不显示控制台。
+正式入口是 [Releases](https://github.com/Cormor/SimRacingOverlay/releases) 已发布版本的 `SimRacingOverlay-版本号-Setup.exe`。本文命令以当前源码构建的 1.6.0 安装包为例，公开附件以 Releases 为准。双击后选择安装目录并安装；默认位置为当前用户文档目录下的 `AI\Apps\SimRacingOverlay`，无需管理员权限。完成后在开始菜单打开 **SimRacingOverlay**，默认进入管理窗口。安装界面与启动入口均不显示控制台。
 
 日常使用开始菜单和托盘。重复的 `Start.cmd`、`Setup.ps1` 手动入口已移除；升级会删除本安装旧清单已登记的这两个文件。`Start-Overlay.ps1`、`Stop-Overlay.ps1` 是启动器及集成的内部依赖，继续保留。
 
@@ -10,7 +10,7 @@
 
 ## 用户数据与旧入口迁移
 
-升级保留 `settings.json`、`assets/layout.json`、`assets/wheel-packs/`、`runtime/desktop.json`、`runtime/desktop-profile/`、`runtime/integration.json` 和暂停自启动标记。安装目标已有的数据优先；迁移源只补充不存在的文件。新安装使用 `defaults/` 中的初始设置和布局。
+升级保留 `settings.json`、`assets/layout.json`、`assets/wheel-packs/`、`assets/modules/`、`assets/components/`、`runtime/desktop.json`、`runtime/desktop-profile/`、`runtime/integration.json` 和暂停自启动标记。安装目标已有的数据优先；迁移源只补充不存在的文件。新安装使用 `defaults/` 中的初始设置和布局。
 
 如果安装目录原来是指向源码的目录联接，安装器会先确认联接实体，停止该实体的运行进程，仅移除联接本身，再创建独立的安装目录并迁移上述数据。源码目录及其内容保留。显式指定的迁移源必须与联接原目标一致。
 
@@ -36,17 +36,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\build-installer.
 ```powershell
 # 显示安装界面，预填安装路径和迁移来源。
 $installRoot = Join-Path $env:USERPROFILE 'Documents\AI\Apps\SimRacingOverlay'
-.\SimRacingOverlay-1.4.1-Setup.exe --root $installRoot `
+.\SimRacingOverlay-1.6.0-Setup.exe --root $installRoot `
   --migration-source 'C:\work\SimRacingOverlay'
 
 # 自动安装：调用者等待进程结束，退出码 0 表示完成，1 表示失败。
-$p = Start-Process .\SimRacingOverlay-1.4.1-Setup.exe -Wait -PassThru `
+$p = Start-Process .\SimRacingOverlay-1.6.0-Setup.exe -Wait -PassThru `
   -ArgumentList ('--quiet --root "' + $installRoot + '"') `
   -RedirectStandardError .\install-error.txt
 $p.ExitCode
 ```
 
-`tools/Install-App.ps1` 也支持 `-Payload <已解压根目录>`、`-InstallPath` 和 `-MigrationSource`；直接调用时程序包必须已包含构建器生成的 `runtime/SimRacingUninstall.exe`。通常使用独立 Setup 即可。静默调用失败的错误写入标准错误流；界面调用失败时直接显示错误。
+`tools/Install-App.ps1` 也支持 `-Payload <已解压根目录>`、`-InstallPath` 和 `-MigrationSource`；直接调用时程序包必须已包含构建器生成的 `runtime/SimRacingUninstall.exe`。通常使用独立 Setup 即可。静默调用失败的错误写入标准错误流；界面调用失败时直接显示错误。`--restart` 会在成功安装后通过同一 GUI 启动器重新启动应用；应用内的完整更新入口使用该参数。算法 hotfix、本地替换和完整升级后的算法选择规则见 [UPDATES.md](UPDATES.md)。
 
 ## 管理窗口启动确认
 

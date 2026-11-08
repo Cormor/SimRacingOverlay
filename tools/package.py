@@ -15,10 +15,10 @@ local_documents={'AGENTS.md','docs/ARCHITECTURE-REVIEW.md','docs/CODE-REVIEW.md'
 source=[]
 for glob in ('*.js','*.css','*.html','*.lua','*.ps1','*.cmd','*.md','VERSION','LICENSE','.gitignore','.gitattributes'):
  source.extend(p for p in ROOT.glob(glob) if p.is_file())
-for folder in ('src','assets','defaults','tools','tests','docs','licenses','design','.github'):
+for folder in ('src','assets','defaults','tools','tests','docs','licenses','design','examples','.github'):
  source.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and p.name!='layout.json' or p.is_file() and folder=='defaults')
 # Machine-specific runtime state is excluded; the shared preset is public.
-source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts and p.relative_to(ROOT).as_posix() not in local_documents))
+source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts and 'modules' not in p.relative_to(ROOT).parts and 'components' not in p.relative_to(ROOT).parts and p.relative_to(ROOT).as_posix() not in local_documents))
 # Rebuilt native files must be bound to the exact source in this package.
 receipt=json.loads((ROOT/'runtime/native-build.json').read_text(encoding='utf-8-sig'))
 required_sources={'src/SimHubPlugin.cs','src/led_tap.py','src/led_decoder.py','src/led-tap.js'}

@@ -6,6 +6,10 @@ on:
         description: Existing draft release ID
         required: true
         type: string
+      hotfix_base:
+        description: Optional exact installed base version for an algorithm-compatible hotfix
+        required: false
+        type: string
 permissions:
   contents: write
 concurrency:
@@ -67,6 +71,20 @@ jobs:
           $setup = Get-Item "dist/SimRacingOverlay-$version-Setup.exe"
           $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           Add-Content dist/SHA256SUMS.txt "$hash  $($setup.Name)" -Encoding ascii
+      - name: Create official update metadata and optional algorithm hotfix
+        env:
+          HOTFIX_BASE: ${{ inputs.hotfix_base }}
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $metadataArguments = @('tools/package-hotfix.py','--setup',"dist/SimRacingOverlay-$version-Setup.exe",'--output','dist/update-manifest.json')
+          if ($env:HOTFIX_BASE) {
+            $hotfix = "dist/SimRacingOverlay-$version.hotfix.json"
+            python tools/package-hotfix.py --base-version $env:HOTFIX_BASE --output $hotfix
+            if ($LASTEXITCODE -ne 0) { throw 'Hotfix packaging failed.' }
+            $metadataArguments += @('--hotfix',$hotfix)
+          }
+          python @metadataArguments
+          if ($LASTEXITCODE -ne 0) { throw 'Update metadata generation failed.' }
       - name: Upload complete package to draft release
         env:
           GH_TOKEN: ${{ github.token }}

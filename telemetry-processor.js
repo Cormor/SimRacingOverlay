@@ -3,22 +3,30 @@
  // One owner per calculation session. Failed owners never resume frozen
  // history, and failures never replay the sample that caused them.
  class Client {
-  constructor({createModel,createWorker=()=>new Worker('telemetry-worker.js'),timeoutMs=400}={}){
+  constructor({createModel,createWorker=()=>new Worker(globalThis.SROModules?.workerUrl()||'telemetry-worker.js'),timeoutMs=400}={}){
    if(typeof createModel!=='function')throw Error('A fresh model factory is required');
    this.createModel=createModel;this.timeoutMs=timeoutMs;this.worker=null;this.model=null;
-   this.pending=null;this.id=0;this.session=1;this.context=undefined;this.closed=false;this.mode='worker';this.lastError=null;
+   this.pending=null;this.id=0;this.session=1;this.context=undefined;this.closed=false;this.mode='worker';this.lastError=null;this.componentRevision=globalThis.SROModules?.componentSnapshot?.revision;
+   this.readyPromise=new Promise(resolve=>{this.resolveReady=resolve;});
+   this.readyTimer=this.componentRevision===undefined?null:setTimeout(()=>this.finishReady({ok:false,error:'组件计算拥有者尚未就绪'}),2000);
    try{
     const worker=createWorker();this.worker=worker;
     worker.onmessage=({data})=>this.receive(worker,data);
     worker.onerror=event=>{event?.preventDefault?.();this.failWorker(worker,'worker-error');};
     worker.onmessageerror=()=>this.failWorker(worker,'worker-message-error');
-   }catch(error){this.worker?.terminate?.();this.worker=null;this.mode='main';this.lastError={code:'worker-unavailable',message:this.message(error)};}
+   }catch(error){this.worker?.terminate?.();this.worker=null;this.mode='main';this.lastError={code:'worker-unavailable',message:this.message(error)};this.finishReady({ok:false,error:this.lastError.message});}
   }
+  finishReady(result){clearTimeout(this.readyTimer);this.resolveReady?.(result);this.resolveReady=null;}
+  ready(){return this.readyPromise;}
   message(error){return String(error?.message||error||'Calculation failed').slice(0,256);}
   failure(code,message,session=this.session){return {ok:false,error:{code,message},session,mode:this.mode};}
   settle(result){const p=this.pending;if(!p)return;clearTimeout(p.timer);this.pending=null;p.resolve(result);}
   receive(worker,data){
+   if(worker===this.worker&&data?.type==='components-ready'){
+    this.finishReady(data.componentRevision===this.componentRevision?{ok:data.ok===true,error:data.error||null,revision:data.componentRevision}:{ok:false,error:'组件计算版本不一致'});return;
+   }
    const p=this.pending;if(worker!==this.worker||!p||data?.id!==p.id||data?.session!==p.session)return;
+   if(this.componentRevision!==undefined&&data.componentRevision!==this.componentRevision){this.failWorker(worker,'component-revision-mismatch');return;}
    if(data.ok===true&&data.view&&typeof data.view.fresh==='boolean'&&Number.isFinite(data.costMs)&&data.costMs>=0){
     this.settle({ok:true,view:data.view,costMs:data.costMs,session:p.session,mode:'worker'});return;
    }
@@ -32,16 +40,17 @@
    if(worker!==this.worker||this.closed)return;
    worker.onmessage=worker.onerror=worker.onmessageerror=null;worker.terminate();this.worker=null;
    this.lastError={code,message:code};this.settle(this.failure(code,code));
+   this.finishReady({ok:false,error:code});
    // Start a fresh direct-processing session on the NEXT sample. Degraded
    // mode is observable; there is no hidden move back to an old model.
-   this.mode='main';this.model=null;this.session++;
+   this.mode='main';this.model?.dispose?.();this.model=null;this.session++;
   }
   run(state,now,context=0){
    if(this.closed)return Promise.resolve(this.failure('disposed','Calculation owner has been disposed'));
    if(this.pending)throw Error('Only one telemetry sample may be in flight');
    // Lifecycle transitions are observed before coalescing by the caller.
    // Even A -> B -> A must start new history when B was never processed.
-   if(this.context!==context){if(this.context!==undefined)this.session++;this.context=context;this.model=null;}
+   if(this.context!==context){if(this.context!==undefined)this.session++;this.context=context;this.model?.dispose?.();this.model=null;}
    if(!this.worker){
     const session=this.session,start=performance.now();
     try{
@@ -49,7 +58,7 @@
      const view=this.model.update(state,now);
      return Promise.resolve({ok:true,view,costMs:performance.now()-start,session,mode:'main'});
     }catch(error){
-     this.lastError={code:'model-error',message:this.message(error)};this.model=null;this.session++;
+     this.lastError={code:'model-error',message:this.message(error)};try{this.model?.dispose?.();}catch{}this.model=null;this.session++;
      return Promise.resolve(this.failure('model-error',this.lastError.message,session));
     }
    }
@@ -60,9 +69,9 @@
    });
   }
   dispose(){
-   if(this.closed)return;this.closed=true;
+   if(this.closed)return;this.closed=true;this.finishReady({ok:false,error:'组件计算拥有者已释放'});
    if(this.worker){this.worker.onmessage=this.worker.onerror=this.worker.onmessageerror=null;this.worker.terminate();this.worker=null;}
-   this.model=null;this.settle(this.failure('disposed','Calculation owner has been disposed'));
+   this.model?.dispose?.();this.model=null;this.settle(this.failure('disposed','Calculation owner has been disposed'));
   }
   status(){return {mode:this.mode,session:this.session,closed:this.closed,lastError:this.lastError&&{...this.lastError}};}
  }

@@ -50,3 +50,23 @@ body.direct-edit-mode .properties-pane .slider-field{margin-bottom:12px}
 body.direct-edit-mode .edit-footer{padding:6px 8px;min-height:56px;gap:6px}
 body.direct-edit-mode .edit-footer #finish{min-width:96px;padding:6px 12px}
 body.direct-edit-mode .edit-footer .lx-status{font-size:12px;line-height:1.35}
+
+/* 更新状态与既有设置组件共用主题；提示不改变焦点和页面。 */
+.update-card{margin-block:20px;max-width:980px}.update-actions{display:flex;flex-wrap:wrap;gap:12px;margin-block:16px}.update-notes{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;max-height:360px;overflow:auto}.update-preview{margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}.update-files{font-family:var(--font-mono);overflow-wrap:anywhere;padding-left:24px}.update-dot{display:inline-block;width:8px;height:8px;min-width:8px;border-radius:50%;background:var(--accent);margin-left:auto}#updateStatus[data-tone=danger]{color:var(--danger)}
+
+/* CX01复用导航、字段、选择器、按钮和状态；四个独立维度不改变布局编辑。 */
+.component-grid{display:grid;grid-template-columns:minmax(280px,380px) minmax(280px,1fr);gap:24px;margin-top:24px;align-items:start}.component-grid>*{min-width:0}.component-options .lx-field{display:block}.component-description{color:var(--text-muted);font-size:14px;margin:-8px 0 20px}.component-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}.component-package{margin-top:24px}#componentCompatibility[data-tone=danger]{color:var(--danger)}#componentCompatibility[data-tone=success]{color:var(--success)}.component-options .lx-combobox{width:100%}.component-options .lx-combobox__value{white-space:normal;text-align:left}@media(max-width:1199px){.component-grid{grid-template-columns:1fr}}
+
+/* CX02：所有导航图标共用同一几何槽，字形不参与图标对齐。 */
+.app-nav .lx-nav-item{display:flex;align-items:center;gap:12px}.app-nav .nav-icon{display:flex;align-items:center;justify-content:center;flex:0 0 24px;width:24px;height:24px;line-height:0}.app-nav .nav-icon .lx-icon{display:block;flex:none;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5}.app-nav .nav-label{min-width:0}.component-preview-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;min-width:0;max-width:100%}.component-preview-pair figure{margin:0;min-width:0;max-width:100%}.component-preview-pair figcaption{font-size:14px;font-weight:600;margin-bottom:8px}.component-preview-pair .mini-stage{aspect-ratio:1/1}.preview-source{font-size:14px;color:var(--text-muted);padding:8px 12px;border-left:3px solid var(--accent);background:var(--canvas)}.component-theme-type[hidden]{display:none}.component-comparison .component-actions{margin-top:16px}.component-grid{grid-template-columns:minmax(280px,340px) minmax(320px,1fr)}@media(max-width:1199px){.component-grid{grid-template-columns:1fr}}@media(max-width:999px){.app-nav .lx-nav-item{gap:0}}@media(max-width:640px){.component-preview-pair{grid-template-columns:1fr}}
+
+.component-options .component-fixed-choice:disabled{opacity:1;color:var(--text-muted);background:var(--canvas);cursor:default}.component-fixed-choice .lx-chevron{visibility:hidden}#componentPreviewStatus[data-tone=danger]{color:var(--danger)}.component-preview-source-select{max-width:360px;margin-bottom:12px}
+
+/* 配色与显示辅助共用字段几何，辅助为独立选择，不以配色联动样式。 */
+.component-options .component-description{overflow-wrap:anywhere}
+
+/* 选择页仅展示差别与固定能力，空说明不占位。 */
+.component-options .component-description:empty,#componentPreviewStatus:empty{display:none}.component-options .lx-field>span{font-weight:600}
+
+.component-preview-pair .mini-stage{width:100%;min-width:0;max-width:100%;aspect-ratio:var(--component-preview-aspect,1);min-height:160px}
+.component-preview-pair canvas{width:100%;min-width:0;max-width:100%}

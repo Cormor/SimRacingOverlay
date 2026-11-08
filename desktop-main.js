@@ -1,5 +1,5 @@
 'use strict';
-const {app,BrowserWindow,screen,ipcMain,globalShortcut,Tray,Menu,nativeImage,net}=require('electron');
+const {app,BrowserWindow,screen,ipcMain,globalShortcut,Tray,Menu,nativeImage,net,dialog,shell}=require('electron');
 const fs=require('node:fs'),path=require('node:path');
 const {spawn}=require('node:child_process');
 const {performance}=require('node:perf_hooks');
@@ -12,9 +12,12 @@ const port=(()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'settings.
 const baseUrl='http://127.0.0.1:'+port+'/',managerUrl=baseUrl+'manager.html';
 const {createStore,createElectronRequest}=require('./wheel-store');
 const {createDesktopTray}=require('./desktop-tray');
+const {createUpdateService}=require('./desktop-updates');
+const {createService:createComponentService}=require('./component-host');
 const wheelCatalog=JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-catalog.json'),'utf8'));
 const wheelStore=createStore({request:createElectronRequest(net),root,catalog:wheelCatalog,validate:require('./wheel-profile').validate});
 if(!app.requestSingleInstanceLock())app.quit();else{
+ let updateService,componentService,updateStartup,updateTimer,moduleOperation=false;
  let win,manager,tray,trayController,timer,displays,loadedRevision=null,closingManager=false,closeBusy=false,managerDisplayId=null;
  let revision=Date.now(),lastScene='',lastBounds='',lastPage=null,lastPresentation=null,lastStatus='',quitting=false;
  let reloadTimer=null,reloadAttempts=0,navigation=0,hudUrl=null,configRetry=null,quitAfterManager=false,closingReference=null;
@@ -118,6 +121,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    {label:'打开管理窗口',click:()=>openManager('overview')},
    {label:'编辑布局 ('+shortcutLabel()+')',click:()=>openManager('layout')},
    {label:'盘面与设备输入',click:()=>openManager('inputs')},
+   {label:'版本与更新'+(updateService?.snapshot().available?' · 有可用更新':''),click:()=>openManager('updates')},
    {label:'显示 / 隐藏桌面叠加',click:()=>writeSettings({visible:!settings().visible})},
    {label:'重置本段 G 峰值',click:()=>{if(win&&!win.isDestroyed()&&!hudNavigating)win.webContents.executeJavaScript('window.OverlayUIHost?.resetGPeak()').catch(reportError);}},
    {type:'separator'},
@@ -451,6 +455,20 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }finally{applying=false;if(applyAgain){applyAgain=false;queueMicrotask(apply);}}
  }
  function requestReload(){revision++;obsRevision++;apply();publishObsState();}
+ async function reloadComponentHud(expectedRevision){
+  if(quitting||!win||win.isDestroyed())throw Error('叠加层已退出');
+  revision++;obsRevision++;loadedRevision=revision;
+  const url=new URL(hudUrl||baseUrl);url.searchParams.set('v',revision);navigateHud(url.href);
+  const epoch=navigation,target=win.webContents;
+  await waitPageLoaded(target,Date.now()+10000,'叠加层组件',baseUrl);
+  if(epoch!==navigation||target.isDestroyed()||quitting)throw Error('组件载入已被新的页面替换');
+  const result=await target.executeJavaScript('window.componentRuntimeReady || {ok:false,error:"组件页面没有初始化"}');
+  if(epoch!==navigation||target.isDestroyed()||quitting)throw Error('组件载入已取消');
+  if(result?.ok!==true)throw Error(result?.error||'组件注册未完成');
+  if(expectedRevision&&result.revision!==expectedRevision)throw Error('组件选择版本与运行端不一致');
+  if(manager&&!manager.isDestroyed()){const attached=await manager.webContents.executeJavaScript('window.OverlayManager?.reconnectHost()');if(attached!==true)throw Error('管理窗口尚未连接新的叠加层');}
+  publishObsState();return result;
+ }
  function scheduleRecovery(){
   clearTimeout(reloadTimer);
   if(quitting||!win||win.isDestroyed())return;
@@ -584,6 +602,17 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   win.webContents.on('render-process-gone',(_event,details)=>{recordSceneInput('renderer-gone',{reason:details.reason,exitCode:details.exitCode});hudNavigating=true;updateSceneInput();trayController?.invalidate();scheduleRecovery();});
   win.webContents.on('will-navigate',(event,url)=>{if(!url.startsWith(baseUrl))event.preventDefault();});
   ipcMain.on('tray-input-state',(e,value)=>{if(!hudNavigating&&trustedHost(e)&&e.senderFrame===win.webContents.mainFrame)trayController?.acceptState(value);});
+  const updateResult=async(e,run,mutation=false)=>{if(!trustedManager(e))return {ok:false,error:'非当前管理页面'};if(mutation&&moduleOperation)return {ok:false,error:'另一项模块更改正在应用'};if(mutation)moduleOperation=true;try{return await run();}catch(error){return {ok:false,error:error.message,state:updateService.snapshot()};}finally{if(mutation)moduleOperation=false;}};
+  ipcMain.handle('components-catalog',e=>trustedManager(e)?componentService.catalog():{error:'非当前管理页面',components:[]});
+  ipcMain.handle('components-apply',(e,request)=>updateResult(e,()=>componentService.apply(request),true));
+  ipcMain.handle('updates-state',e=>updateResult(e,()=>({ok:true,state:updateService.snapshot()})));
+  ipcMain.handle('updates-check',e=>updateResult(e,()=>updateService.check(true)));
+  ipcMain.handle('updates-download',(e,kind)=>updateResult(e,()=>['setup','hotfix'].includes(kind)?updateService.download(kind):{ok:false,error:'未知更新类型'}));
+  ipcMain.handle('updates-import',e=>updateResult(e,async()=>{const target=manager,result=await dialog.showOpenDialog(target,{title:'导入 hotfix 或盘面包',properties:['openFile'],filters:[{name:'模块包 JSON',extensions:['json']}]});if(result.canceled)return {ok:true,cancelled:true};if(target!==manager||!trustedManager(e))return {ok:false,error:'管理窗口已变化'};return updateService.inspectLocal(result.filePaths[0]);}));
+  ipcMain.handle('updates-apply',e=>updateResult(e,()=>updateService.applyPending(),true));
+  ipcMain.handle('updates-install',e=>updateResult(e,()=>updateService.install()));
+  ipcMain.handle('updates-clear',e=>updateResult(e,()=>updateService.clearModules(),true));
+  ipcMain.handle('updates-release',e=>updateResult(e,async()=>{const url=updateService.snapshot().release?.url;if(!url||!/^https:\/\/github\.com\//i.test(url))return {ok:false,error:'Release 页面暂不可用'};await shell.openExternal(url);return {ok:true};}));
   ipcMain.handle('layout-shortcut-get',e=>trustedManager(e)?shortcutState():{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
   ipcMain.handle('layout-shortcut-recording',(e,value)=>trustedManager(e)&&typeof value==='boolean'?setLayoutShortcutRecording(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
   ipcMain.handle('layout-shortcut-set',(e,value)=>trustedManager(e)?registerLayoutShortcut(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
@@ -629,6 +658,9 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   const registration=registerLayoutShortcut(initialShortcut,false);
   if(!registration.ok){layoutShortcut=initialShortcut;layoutShortcutError=registration.error;shortcutReady=true;}
   trayController=createDesktopTray({Tray,nativeImage,root,tooltipSuffix:shortcutState().ok?shortcutLabel()+' 编辑':'编辑快捷键未注册',onChange:persistStatus});tray=trayController.tray;tray.on('click',()=>{void openManager('overview');});refreshTrayMenu();
+  componentService=createComponentService({root,beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},reloadHud:reloadComponentHud});
+  updateService=createUpdateService({root,request:createElectronRequest(net),onState:state=>{trayController?.setUpdateAvailable(state.available);refreshTrayMenu();if(manager&&!manager.isDestroyed())manager.webContents.send('updates-state',state);},beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},applyModules:async expectedRevision=>reloadComponentHud(expectedRevision),installSetup:async file=>{await new Promise((resolve,reject)=>{const child=spawn(file,['--root',root,'--restart'],{detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});}});
+  updateStartup=setTimeout(()=>{void updateService.check().catch(reportError);},15000);updateTimer=setInterval(()=>{void updateService.check().catch(reportError);},6*60*60*1000);
   const displayChanged=()=>{syncDisplays(true);apply();};
   for(const event of ['display-added','display-removed','display-metrics-changed']){
    screen.on(event,displayChanged);unwatch.push(()=>screen.removeListener(event,displayChanged));
@@ -666,5 +698,5 @@ if(!app.requestSingleInstanceLock())app.quit();else{
 
  });
  app.on('before-quit',event=>{if(manager&&!manager.isDestroyed()){event.preventDefault();closeManager(true);}else allowHudClose=true;});
- app.on('will-quit',()=>{finishShutdownRequest('exiting');quitting=true;clearInterval(timer);clearTimeout(reloadTimer);clearTimeout(configRetry);clearTimeout(obsStateRetry);clearTimeout(persistTimer);for(const stop of unwatch)stop();displays?.dispose();trayController?.dispose();globalShortcut.unregisterAll();});app.on('window-all-closed',()=>{clearInterval(timer);app.quit();});
+ app.on('will-quit',()=>{finishShutdownRequest('exiting');quitting=true;clearTimeout(updateStartup);clearInterval(updateTimer);updateService?.dispose();componentService?.dispose();clearInterval(timer);clearTimeout(reloadTimer);clearTimeout(configRetry);clearTimeout(obsStateRetry);clearTimeout(persistTimer);for(const stop of unwatch)stop();displays?.dispose();trayController?.dispose();globalShortcut.unregisterAll();});app.on('window-all-closed',()=>{clearInterval(timer);app.quit();});
 }

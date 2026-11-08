@@ -70,6 +70,7 @@
  function hit(x,y,includeLocked=false){return definitions.slice().sort((a,b)=>layout.controls[b.id].z-layout.controls[a.id].z).find(d=>{const c=layout.controls[d.id];if(!c.enabled||(!includeLocked&&c.locked))return false;const [bx,by,w,h]=d.bounds,a=-c.rotation*Math.PI/180,px=x-bx-w/2-c.x,py=y-by-h/2-c.y;return Math.abs(px*Math.cos(a)-py*Math.sin(a))<=w*c.sx/2&&Math.abs(px*Math.sin(a)+py*Math.cos(a))<=h*c.sy/2;})?.id;}
  function point(clientX,clientY,r){const s=stage(),scale=Math.min(r.width/s.width,r.height/s.height);return {x:((clientX-r.x-(r.width-s.width*scale)/2)/scale-s.originX)/s.scale,y:((clientY-r.y-(r.height-s.height*scale)/2)/scale-s.originY)/s.scale};}
  function begin(){jobs=[];}
+ function collect(build){const previous=jobs;jobs=[];try{return build();}finally{jobs=previous;}}
  function group(id,draw){if(byId.has(id))jobs.push({id,draw});else draw();}
  function capture(){return jobs.filter(j=>layout.controls[j.id].enabled).slice().sort((a,b)=>layout.controls[a.id].z-layout.controls[b.id].z).map(j=>{const d=byId.get(j.id),c={...layout.controls[j.id]},[x,y,w,h]=d.bounds;const paint=target=>{target.save();target.translate(x+w/2+c.x,y+h/2+c.y);target.rotate(c.rotation*Math.PI/180);target.scale(c.sx,c.sy);target.translate(-x-w/2,-y-h/2);painting=c;try{j.draw();}finally{painting=null;target.restore();}};return {id:j.id,c,d,paint};});}
  function flush(ctx,retained,prepared){for(const j of prepared||capture()){if(retained)retained.draw(j.id,j.c,j.d,j.paint);else j.paint(ctx);}if(retained)retained.finish(ctx);if(!editing&&!selected.length)return;
@@ -80,6 +81,6 @@
  }
  function raster(s,dpr=1,vw=s.width,vh=s.height,native=false){if(native&&Number.isFinite(s.pixelWidth)&&Number.isFinite(s.pixelHeight))return {width:s.pixelWidth,height:s.pixelHeight,ratio:Math.sqrt(s.pixelWidth/s.width*s.pixelHeight/s.height)};dpr=Number.isFinite(dpr)&&dpr>0?dpr:1;const fit=Math.min(vw/s.width,vh/s.height),ratio=Math.min(4,Math.max(dpr,fit*dpr));return {width:Math.round(s.width*ratio),height:Math.round(s.height*ratio),ratio};}
  function drawOpacity(kind){return (painting?.opacity??1)*(kind==='text'?(painting?.textOpacity??1):(painting?.imageOpacity??1));}
- const api={definitions,byId,defaults,screenStage,preset:()=>clone(preset),defaultScale,clean,set,get,stage,setDesktopStage,corners,box,bounds,viewport,fit,transform,hit,point,select,selection:()=>selected.slice(),setEditing:v=>{editing=!!v;changed();},begin,group,capture,flush,onChange,raster,drawOpacity};
+ const api={definitions,byId,defaults,screenStage,preset:()=>clone(preset),defaultScale,clean,set,get,stage,setDesktopStage,corners,box,bounds,viewport,fit,transform,hit,point,select,selection:()=>selected.slice(),setEditing:v=>{editing=!!v;changed();},begin,group,collect,capture,flush,onChange,raster,drawOpacity};
  if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.OverlayLayout=api;
 })(typeof window!=='undefined'?window:globalThis);

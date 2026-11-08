@@ -8,7 +8,7 @@ $Payload=[IO.Path]::GetFullPath($Payload).TrimEnd('\')
 $InstallPath=[IO.Path]::GetFullPath($InstallPath)
 if($InstallPath.TrimEnd('\') -ieq [IO.Path]::GetPathRoot($InstallPath).TrimEnd('\')){throw 'Choose an application folder, not a drive root.'}
 $InstallPath=$InstallPath.TrimEnd('\')
-$preserved=@('settings.json','assets\layout.json','assets\wheel-packs','runtime\desktop.json','runtime\desktop-profile','runtime\integration.json','runtime\autostart.paused')
+$preserved=@('settings.json','assets\layout.json','assets\wheel-packs','assets\modules','assets\components','runtime\desktop.json','runtime\desktop-profile','runtime\integration.json','runtime\autostart.paused')
 function Is-UserFile([string]$Relative) {
  foreach($item in $preserved){if($Relative -ieq $item -or $Relative.StartsWith($item+'\',[StringComparison]::OrdinalIgnoreCase)){return $true}}
  return $false
@@ -98,6 +98,9 @@ try {
  foreach($name in $values.Keys){New-ItemProperty -Path $key -Name $name -Value $values[$name] -PropertyType String -Force|Out-Null}
  New-ItemProperty -Path $key -Name NoModify -Value 1 -PropertyType DWord -Force|Out-Null
  New-ItemProperty -Path $key -Name NoRepair -Value 1 -PropertyType DWord -Force|Out-Null
+ # Full upgrades select the new bundled algorithms, while imported generations remain user data.
+ $activeModules=Join-Path $InstallPath 'assets\modules\active.json'
+ if(Test-Path -LiteralPath $activeModules){Remove-Item -LiteralPath $activeModules -Force}
  Write-OverlayJson (Join-Path $InstallPath 'runtime\installed-app.json') @{version=$version;root=$InstallPath;installed=$true;files=@($programFiles);shortcut=$shortcut;installedAt=[DateTime]::UtcNow.ToString('O')}
  @{ok=$true;version=$version;installPath=$InstallPath;shortcut=$shortcut}|ConvertTo-Json -Compress
 } finally {Exit-OverlayLock $mutex}

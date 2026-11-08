@@ -153,8 +153,14 @@
   }
  }
  class Model {
-  constructor(){this.contact=new Suspension.Contact();this.feedback=new Feedback.Observer({steering:'state',pedals:null});this.pedalTraction=new PedalTraction.Observer();this.lateralSlip=new LateralSlipState();this.frontSteeringResponse=new FrontSteeringResponse();this.reset();}
-  reset(){this.handling=new Handling();this.grip=new Grip.Estimator();this.feedback.reset();this.pedalTraction.reset();this.lateralSlip.reset();this.frontSteeringResponse.reset();this.contact?.reset();this.packet=null;this.advance=null;this.car=null;this.source=null;this.epoch=undefined;this.sourceTime=null;this.loadSupport=[false,false,false,false];this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
+  constructor({componentSelection={}}={}){
+   this.contact=new Suspension.Contact();this.feedback=new Feedback.Observer({steering:'state',pedals:null});this.pedalTraction=new PedalTraction.Observer();this.lateralSlip=new LateralSlipState();this.frontSteeringResponse=new FrontSteeringResponse();
+   let runtime=root.ComponentRuntime;
+   if(typeof module!=='undefined'&&module.exports){runtime=require('./component-runtime');if(!runtime.get('component','throttle'))require('./component-builtins').install(runtime,PedalTraction);}
+   this.components=runtime?new runtime.Algorithms(componentSelection):null;this.reset();
+  }
+  dispose(){this.components?.dispose();}
+  reset(){this.components?.reset();this.handling=new Handling();this.grip=new Grip.Estimator();this.feedback.reset();this.pedalTraction.reset();this.lateralSlip.reset();this.frontSteeringResponse.reset();this.contact?.reset();this.packet=null;this.advance=null;this.car=null;this.source=null;this.epoch=undefined;this.sourceTime=null;this.loadSupport=[false,false,false,false];this.loadState=Array.from({length:4},()=>({unloaded:false,transition:null}));this.samples=[];this.filtered={};this.cues={};this.trend={candidate:null,since:null,active:null};this.neutral=true;this.view={fresh:false,unloaded:[false,false,false,false]};}
   update(s,now){
    if(!Number.isFinite(now)||now<0){this.car=null;this.reset(0);return this.view;}
    let g=s?.game;
@@ -230,6 +236,7 @@
    const feedback=this.feedback.update(s,Number.isFinite(g.sampleTime)?g.sampleTime:now,unloaded,steering,loadKnownWheels,grip.vehicleResponse,now);
    const traction=this.pedalTraction.update(s,unloaded,now);
    const drive=traction?.pedal==='drive'?traction:null,brake=traction?.pedal==='brake'?traction:null;
+   const components=this.components?.update({state:s,unloaded,now,baseline:traction});
    let decel=null;
    if(Number.isFinite(g.sampleTime)&&Number.isFinite(g.speedKmh)){
     const t=g.sampleTime;
@@ -243,7 +250,7 @@
      if(Number.isFinite(value)&&Math.abs(value)<10){this.filtered.decel=value;if(g.brake>.05&&g.speedKmh>5)decel=this.filtered.decel;}
     }
    }else{this.samples=[];delete this.filtered.decel;}
-   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,loadKnownWheels,unloaded,contact,steering,lateral,lateralSlip,frontResponse,drive,brake,decel,grip,feedback};this.view.handling=this.handling.update(s,now,this.view);return this.view;
+   this.view={fresh:true,packet:g.packet,telemetryTime:g.sampleTime,processedAt:now,loadKnown,loadKnownWheels,unloaded,contact,steering,lateral,lateralSlip,frontResponse,drive,brake,decel,grip,feedback,components};this.view.handling=this.handling.update(s,now,this.view);return this.view;
   }
  }
  const api={Model,geometry};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.DrivingAssist=api;

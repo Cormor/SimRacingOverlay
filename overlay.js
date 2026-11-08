@@ -27,6 +27,7 @@ function wheelDensity(){
  return Math.ceil((scale-1e-6)*4)/4;
 }
 function paintWheelLayer(kind,key,density,draw){
+ if(previewDrawing){draw();return;}
  const layer=wheelLayers[kind],stats=wheelFaceStats[kind],w=Math.ceil(1315*density),h=Math.ceil(1197*density);
  if(!(density>0)||w*h>8*1024*1024||typeof document.createElement!=='function'){draw();return;}
  const style=layout.drawOpacity?.('image')+':'+(kind==='lights'?layout.drawOpacity?.('text'):'');key+=':'+style;
@@ -44,7 +45,7 @@ function paintWheelLayer(kind,key,density,draw){
  nativeContext.drawImage(layer.bitmap,0,0,1315,1197);
 }
 const params=new URLSearchParams(location.search),demo=params.get('demo')==='1',qa=params.get('qa')==='1';
-let paintScale=1;
+let paintScale=1,previewDrawing=false,activeComponentTokens=null,activeComponentAssistance='none';
 let state={connected:false},angle=0,qaClock=null;
 let paintAngle=0,displayAngle=null,displayFrame=null,displayLastAt=null,lastPaintSignature=null;
 const hardwareInputs=new Map(),retiredHardwareEpochs=new Set();let hardwareEpoch=null,hardwareStatusSample=null,gameSteering=null;
@@ -158,10 +159,18 @@ function openSteeringStream(){
 }
 const UI=typeof OverlayTheme!=='undefined'?OverlayTheme:{font:'Consolas,"Microsoft YaHei UI",monospace',colors:{text:'#edf5ff',muted:'#a4b7cc',track:'#1c2938',border:'#73879d',panel:'#111923',accent:'#62d9ff',brake:'#ff5673',throttle:'#65e3ad',warning:'#ffc75a',danger:'#ff365d',estimateFront:'#83d7f2',estimateRear:'#f6bd84'},sizes:{caption:16,label:20,value:32,secondary:24,primary:28,headline:40,wheelKnob:29,wheelButton:23,flagTitle:28,flagHint:18}};
 const uiInfo={version:'ue-editor-v1',ambientKnobs:false,ambientButtons:false,waiting:false};
-const createAssistModel=()=>new DrivingAssist.Model();
+globalThis.SROModules?.finalizeComponents();
+const componentSnapshot=globalThis.SROModules?.componentSnapshot;
+const componentRenderer=typeof ComponentRenderer!=='undefined'?new ComponentRenderer.Renderer(componentSnapshot?.selection||{}):null;
+const componentPresenter=componentRenderer?.presenter||null;let drawingPresenter=componentPresenter;
+let componentFrames={};
+const reducedComponentMotion=typeof matchMedia==='function'?matchMedia('(prefers-reduced-motion: reduce)'):null;
+const createAssistModel=()=>new DrivingAssist.Model({componentSelection:componentSnapshot?.selection||{}});
 const processor=!qa&&!demo&&typeof TelemetryProcessor!=='undefined'?new TelemetryProcessor.Client({createModel:createAssistModel}):null;
 let assistModel=processor?null:createAssistModel(),assistModelContext=null,assistView={fresh:false,unloaded:[false,false,false,false]};
+window.componentRuntimeReady=globalThis.SROModules?.componentError?Promise.resolve({ok:false,error:globalThis.SROModules.componentError}):processor?processor.ready():Promise.resolve({ok:true,revision:componentSnapshot?.revision});
 if(processor&&typeof addEventListener==='function')addEventListener('unload',()=>processor.dispose(),{once:true});
+if(typeof addEventListener==='function')addEventListener('unload',()=>{componentRenderer?.dispose();assistModel?.dispose?.();},{once:true});
 // Fixed-size counters, no per-frame logging. Recording derives rates from counter deltas.
 const runtimePerf={startedAt:performance.now(),polls:0,errors:0,renders:0,uniquePackets:0,lastPacket:null,algorithm:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)},network:{count:0,totalMs:0,maxMs:0,buckets:Array(11).fill(0)}};
 const costBounds=[.1,.25,.5,1,2,4,8,16,32,64,Infinity];
@@ -242,7 +251,8 @@ function wheelResourcesChanged(ids){
 const stopWheelResources=window.desktopOverlay?.onWheelResourcesChanged?.(wheelResourcesChanged);
 if(typeof addEventListener==='function')addEventListener('unload',()=>{faceDisposed=true;cancelFaceLoad();if(typeof stopWheelResources==='function')stopWheelResources();},{once:true});
 window.WheelFaces={cancel:cancelFaceLoad,highlight:id=>{mappingHighlight=id;queueScene(performance.now());},select:id=>activateFace(id,true),retryCurrent:()=>{const id=layout.get().wheel.faceId;return !faceJob&&id!==activeFace.id?activateFace(id):Promise.resolve({ok:true});},prepare:prepareFace,get:()=>({id:activeFace.id,name:activeFace.name,pending:pendingFace,error:faceError,dashboard:activeFace.dashboard,controls:activeFace.controls,encoders:activeFace.encoders}),busy:()=>pendingFace!==null};
-function text(s,x,y,size=UI.sizes.primary,color=UI.colors.text){ctx.font=`600 ${size}px ${UI.font}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.lineJoin='round';ctx.lineWidth=Math.max(2,size*.09);ctx.strokeStyle=UI.colors.panel;ctx.strokeText(s,x,y);ctx.fillStyle=color;ctx.fillText(s,x,y);}
+function textBacking(target,value,x,y,size){if(activeComponentAssistance!=='contrast')return;const width=target.measureText(String(value)).width+6;target.save();target.globalAlpha=1;target.fillStyle='#000000';target.fillRect(x-width/2,y-size*.58,width,size*1.16);target.restore();}
+function text(s,x,y,size=UI.sizes.primary,color=UI.colors.text){ctx.font=`600 ${size}px ${UI.font}`;ctx.textAlign='center';ctx.textBaseline='middle';textBacking(ctx,s,x,y,size);ctx.lineJoin='round';ctx.lineWidth=Math.max(2,size*.09);ctx.strokeStyle=UI.colors.panel;ctx.strokeText(s,x,y);ctx.fillStyle=color;ctx.fillText(s,x,y);}
 function circle(x,y,r,fill,stroke='#151820',width=5){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=width;ctx.strokeStyle=stroke;ctx.stroke();}
 function emittedColor(v){return typeof v==='string'&&/^#[0-9a-f]{6}$/i.test(v)&&v.toLowerCase()!=='#000000'?v:null;}
 // Dusty rose -> apricot -> sage -> teal -> blue -> lilac: no saturated RGB bands.
@@ -291,23 +301,25 @@ function buttonCap(c,color,ambient=false){
  if(clipped)ctx.restore();
 }
 const pedalBorderColors={green:'#66f0c3',yellow:'#ffc34e',red:'#ff183c'};
-function bar(x,value,color,label,online,traction){
+function bar(x,value,color,label,online,traction,componentId){
  online=online&&Number.isFinite(value);
  const y=230,h=440,w=38;
  ctx.lineJoin='round';ctx.lineWidth=6;ctx.strokeStyle=(online&&pedalBorderColors[traction?.state])||'#07090d';
- ctx.fillStyle='#20252de0';ctx.beginPath();ctx.roundRect(x-w/2,y,w,h,12);ctx.fill();ctx.stroke();
+ ctx.fillStyle=componentFrames[componentId]?.tokens.track||'#20252de0';ctx.beginPath();ctx.roundRect(x-w/2,y,w,h,12);ctx.fill();if(!componentPresenter)ctx.stroke();
  if(online){
   ctx.save();ctx.beginPath();ctx.roundRect(x-w/2+5,y+5,w-10,h-10,8);ctx.clip();ctx.fillStyle=color;
   const fill=(h-10)*Math.max(0,Math.min(100,value))/100;
   if(fill>0){ctx.beginPath();ctx.roundRect(x-w/2+5,y+h-5-fill,w-10,fill,Math.min(8,fill/2));ctx.fill();}
   ctx.restore();
  }
+ if(drawingPresenter)drawingPresenter.draw(componentId,{ctx,geometry:{x,y,w,h},scale:paintScale});
+ if(activeComponentAssistance!=='none'&&componentFrames[componentId]?.selection.presentation!=='pedal.segmented')ComponentBuiltins.responseTag({ctx,geometry:{x,y,w,h},...componentFrames[componentId]});
  text(label,x,y-43,UI.sizes.value||32);
  text(online?`${Math.round(value).toString().padStart(3,' ')}%`:'—',x,y+h+40,UI.sizes.value);
 }
-function statuses(s,online,advance=true){
- const st={...(s.game?.statuses||{})},now=performance.now();
- for(const key of ['absActive','tcActive','escActive']){if(advance&&online&&st[key]===true)latch[key]=now+220;if(online&&now<(latch[key]||0))st[key]=true;}
+function statuses(s,online,advance=true,at=performance.now(),latched=latch){
+ const st={...(s.game?.statuses||{})},now=at;
+ for(const key of ['absActive','tcActive','escActive']){if(advance&&online&&st[key]===true)latch[key]=now+220;if(online&&now<(latched[key]||0))st[key]=true;}
  const active=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true?[
   ['ABS',st.absActive],['TC',st.tcActive===true],['ESC',st.escActive],['水温',st.waterTempWarning],['油压',st.oilPressureWarning],['油路',st.fuelPressureWarning],['熄火',st.engineStalled],['限速',st.pitLimiterActive],['离轨',st.trackSurface===0]
  ].filter(x=>x[1]===true).slice(0,3).map(x=>x[0]):[];
@@ -353,14 +365,14 @@ function advanceWheelLock(s,online,a,i,now){
  const candidate=valid&&!airborne&&Math.abs(s.game.speedKmh)>=10&&s.game.brake>.15&&w.ratio<=-.8&&stoppedRolling;
  if(candidate){if(!lockState[i].since)lockState[i].since=now;if(now-lockState[i].since>=80)lockState[i].until=now+300;}else lockState[i].since=0;
 }
-function wheelSlip(s,online,a=assistView,only=null,advance=true){
- const wheels=s.game?.wheels||[],now=performance.now();
+function wheelSlip(s,online,a=assistView,only=null,advance=true,at=performance.now(),locks=lockState){
+ const wheels=s.game?.wheels||[],now=at;
  for(let i=0;i<4;i++){
   if(only!==null&&i!==only)continue;
   const w=wheels[i],nativeRatio=Number.isFinite(w?.ratio),reported=nativeRatio?w.ratio:w?.slipFeedback,valid=online&&s.game?.available&&s.game.paused!==true&&s.game.inMenu!==true&&Number.isFinite(reported),ratio=valid?reported:0,zero=i<2?295:645;
   const airborne=a.fresh&&a.unloaded[i];
   if(advance)advanceWheelLock(s,online,a,i,now);
-  const isLocked=valid&&now<(lockState[i].until||0),magnitude=Math.abs(ratio),braking=ratio<0;
+  const isLocked=valid&&now<(locks[i].until||0),magnitude=Math.abs(ratio),braking=ratio<0;
   const color=isLocked?LOCK_RED:!valid?'#8591a4':slipColor(magnitude,braking);
   const bx=i%2?842:158,tx=i%2?758:242,extent=105,width=24,fill=slipLength(magnitude);
   ctx.save();
@@ -430,18 +442,18 @@ function wheelLateral(cx,cy,value,unloaded,side,research,evidenceExpired){
  shape();ctx.strokeStyle=borderKnown?rgbMix('#9cb3c7',responseColor(secondary),richness):'#738497';ctx.lineWidth=2+warning*2;
  ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=Math.pow(warning,1.5)*18*paintScale;ctx.stroke();ctx.restore();
 }
-function flagBanner(g){
+function flagBanner(g,waiting=uiInfo.waiting){
  if(typeof Flags==='undefined')return;
- const f=Flags.forGame(g,!uiInfo.waiting);if(!f)return;
+ const f=Flags.forGame(g,!waiting);if(!f)return;
  ctx.save();
  ctx.translate(0,-89);
  ctx.fillStyle=UI.colors.panel+'f2';ctx.strokeStyle=f.color;ctx.lineWidth=3;
  ctx.beginPath();ctx.roundRect(370,0,260,64,12);ctx.fill();ctx.stroke();
  ctx.textAlign='center';ctx.textBaseline='middle';
  ctx.font=`700 ${UI.sizes.flagTitle}px ${UI.font}`;
- ctx.fillStyle=f.color;ctx.fillText(f.name,500,19);
+ ctx.fillStyle=f.color;textBacking(ctx,f.name,500,19,UI.sizes.flagTitle);ctx.fillText(f.name,500,19);
  ctx.font=`600 ${UI.sizes.flagHint}px ${UI.font}`;
- ctx.fillStyle=UI.colors.text;ctx.fillText(f.short,500,46);
+ ctx.fillStyle=UI.colors.text;textBacking(ctx,f.short,500,46,UI.sizes.flagHint);ctx.fillText(f.short,500,46);
  ctx.restore();
 }
 function sideLateral(online,a,side,x){
@@ -451,6 +463,7 @@ function sideLateral(online,a,side,x){
   const front=row===0?a.frontResponse:null;
   const length=Number.isFinite(value)&&front?value*(1-front.reduction):value;
   wheelLateral(x,row?60:34,length,!!grip?.unloadedSides?.[side],side,a.feedback?.wheels?.[row*2+side],front?.evidenceExpired);
+  if(activeComponentAssistance!=='none'&&online&&a.fresh&&(Number.isFinite(length)||grip?.unloadedSides?.[side]))text(row?'后':'前',x-110,row?60:34,16,activeComponentTokens?.text||'#f4f1e8');
  }
 }
 function handlingColor(kind,level){
@@ -471,6 +484,8 @@ function steeringNeedle(s,online,a){
 }
 // Presentation only: raw diagnostic/recorded values are never filtered or fed back into estimation.
 let presentation=null,presentationAt=null;
+const livePreviewHistory=[];let livePreviewIdentity=null;
+function rememberPreviewInput(input){const identity=JSON.stringify([input.state.game?.packet,input.state.game?.streamEpoch,input.state.hardware?.sequence,input.sampleAt]);if(identity===livePreviewIdentity){if(livePreviewHistory.length)livePreviewHistory[livePreviewHistory.length-1]=input;return;}livePreviewIdentity=identity;livePreviewHistory.push(input);while(livePreviewHistory.length>96||livePreviewHistory.length>1&&input.now-livePreviewHistory[0].now>1000)livePreviewHistory.shift();}
 function presentationView(a,now){
  if(!a.fresh){presentation=null;presentationAt=null;return a;}
  const dt=presentationAt===null?Infinity:now-presentationAt,old=presentation;presentationAt=now;
@@ -490,20 +505,19 @@ function presentationView(a,now){
  const frontResponse=freshCue(a.frontResponse)??(a.frontResponse?.reduction>0?{reduction:0,evidenceExpired:true}:null);
  presentation={...a,grip:{...g,axles,needle},feedback,frontResponse,drive:freshCue(a.drive),brake:freshCue(a.brake)};return presentation;
 }
-function drivingUi(s,online,a){
+function drivingUi(s,online,a,group=(id,draw)=>layout.group(id,draw)){
  const nativeF=online&&a.fresh?a.lateral?.front:null;
  const nativeR=online&&a.fresh?a.lateral?.rear:null;
  const slipF=online&&a.fresh?a.grip?.vehicleResponse?.slipAngleFront:null;
  const slipR=online&&a.fresh?a.grip?.vehicleResponse?.slipAngleRear:null;
  const useF=Number.isFinite(nativeF),useR=Number.isFinite(nativeR);
- layout.group('frontLateral',()=>lateralBar(500,119,480,useF?nativeF:slipF,useF?20:15,useF?'':'F',useF?null:UI.colors.estimateFront,!useF));
- layout.group('handling',()=>steeringNeedle(s,online,a));
- layout.group('frontResponse',()=>sideLateral(online,a,0,245));
- layout.group('rearResponse',()=>sideLateral(online,a,1,755));
- layout.group('rearLateral',()=>lateralBar(500,787,480,useR?nativeR:slipR,useR?20:15,useR?'':'R',useR?null:UI.colors.estimateRear,!useR));
- if(!online||!a.fresh)return;
+ group('frontLateral',()=>{const value=useF?nativeF:slipF;lateralBar(500,119,480,value,useF?20:15,useF?'':'F',useF?null:UI.colors.estimateFront,!useF);if(activeComponentAssistance!=='none'&&Number.isFinite(value))text((useF?'前':'前估')+value.toFixed(1)+'°',785,119,16,activeComponentTokens?.text||'#f4f1e8');});
+ group('handling',()=>steeringNeedle(s,online,a));
+ group('frontResponse',()=>sideLateral(online,a,0,245));
+ group('rearResponse',()=>sideLateral(online,a,1,755));
+ group('rearLateral',()=>{const value=useR?nativeR:slipR;lateralBar(500,787,480,value,useR?20:15,useR?'':'R',useR?null:UI.colors.estimateRear,!useR);if(activeComponentAssistance!=='none'&&Number.isFinite(value))text((useR?'后':'后估')+value.toFixed(1)+'°',785,787,16,activeComponentTokens?.text||'#f4f1e8');});
  // Pedal input and its release outline are one inseparable editable control.
- layout.group('decel',()=>{if(Number.isFinite(a.decel)){
+ group('decel',()=>{if(online&&a.fresh&&Number.isFinite(a.decel)){
   const value=Math.abs(a.decel)<.005?0:a.decel;text('实际减速',500,658,UI.sizes.label,'#c1ccd9');text((value<0?'−':'')+Math.abs(value).toFixed(2)+' g',500,691,UI.sizes.value,'#f5f9ff');
  }});
 }
@@ -524,6 +538,12 @@ function drawGBall(v){
  // History is a shape, not a second data list. Mark its largest direction on the rim.
  const peakPoint=(v?.peakOutline||v?.peakHull||[]).reduce((a,p)=>!a||Math.hypot(p.x,p.y)>Math.hypot(a.x,a.y)?p:a,null);
  if(peakPoint&&Math.hypot(peakPoint.x,peakPoint.y)>.005){const a=Math.atan2(peakPoint.y,peakPoint.x);ctx.strokeStyle='#b3eef3';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(x,y,r-1,a-.07,a+.07);ctx.stroke();}
+ if(activeComponentAssistance!=='none'){
+  ctx.save();ctx.globalAlpha=1;ctx.shadowBlur=0;ctx.fillStyle=activeComponentAssistance==='contrast'?'#ffffff':activeComponentTokens?.text||'#f4f1e8';ctx.strokeStyle=ctx.fillStyle;ctx.lineWidth=2;
+  if(peakPoint&&Math.hypot(peakPoint.x,peakPoint.y)>.005){const p=position(peakPoint);ctx.beginPath();ctx.moveTo(p.x,p.y-5);ctx.lineTo(p.x+5,p.y+4);ctx.lineTo(p.x-5,p.y+4);ctx.closePath();ctx.fill();}
+  if(c){const p=position({x:c.lateral,y:c.longitudinal});ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.stroke();}
+  ctx.restore();
+ }
  text(scale.toFixed(1)+'g',x+r+6,y-4,16,'#d8e7f5');
  text(c?c.magnitude.toFixed(2)+'g':'—g',x,y+27,UI.sizes.label,c?'#f3ffff':'#9aaebe');ctx.restore();
 }
@@ -539,7 +559,7 @@ function componentKey(id,s,online,p,now,faceKey,dashboardKey){
  const g=s.game,a=assistView;
  if(id==='dashboard')return dashboardKey;
  if(id==='wheel')return [faceKey,uiInfo.waiting];
- if(id==='brake'||id==='throttle')return [online,p.fresh,id==='brake'?[s.brake,p.brake?.state]:[s.throttle,p.drive?.state]];
+ if(id==='brake'||id==='throttle'){const f=componentFrames[id];return [online,p.fresh,id==='brake'?[s.brake,p.brake?.state]:[s.throttle,p.drive?.state],f&&[f.selection,f.semantic.status,f.semantic.signal,f.motion.opacity,f.motion.glow,f.tokens]];}
  if(id.startsWith('slip')&&!id.startsWith('slipAngle')){const i=Number(id.slice(4)),w=g?.wheels?.[i];return [online,g?.available,g?.paused,g?.inMenu,g?.speedKmh,g?.brake,w,a.fresh,a.unloaded?.[i],w?.ratio<-.65||(lockState[i].until||0)>now?Math.floor(now/20):0];}
  if(id==='frontResponse'||id==='rearResponse')return [online,p.fresh,p.lateralSlip,p.frontResponse?.reduction,p.frontResponse?.evidenceExpired,a.grip?.axles?.front?.unloadedSides,a.grip?.axles?.rear?.unloadedSides,p.feedback?.wheels.map(w=>[w.forceResponse.lateral?.gain,w.forceResponse.lateral?.quality])];
  if(id==='frontLateral'||id==='rearLateral')return [online,a.fresh,a.lateral,a.grip?.vehicleResponse?.slipAngleFront,a.grip?.vehicleResponse?.slipAngleRear];
@@ -551,32 +571,49 @@ function componentKey(id,s,online,p,now,faceKey,dashboardKey){
  if(id==='flags')return [online,uiInfo.waiting,g?.available,g?.source,g?.paused,g?.inMenu,g?.statuses?.sessionFlags];
  return now;
 }
-function prepareScene(now){
+function componentRenderKey(frame){return frame&&[frame.selection,frame.semantic.status,frame.semantic.signal,frame.semantic.summary,frame.motion.opacity,frame.motion.glow,frame.motion.phase];}
+function paintRegisteredComponent(renderer,id,target,bounds,draw,frames,scale,preview){
+ const previous={ctx,componentFrames,drawingPresenter,paintScale,previewDrawing,activeComponentTokens,activeComponentAssistance};
+ try{componentFrames=frames;drawingPresenter=renderer?.presenter;paintScale=scale;previewDrawing=preview;activeComponentTokens=frames[id]?.tokens;activeComponentAssistance=frames[id]?.selection.assistance||'none';
+  const paintBase=themed=>{ctx=themed;draw();};
+  if(renderer)renderer.paint(id,target,bounds,paintBase,scale);else paintBase(target);
+ }finally{ctx=previous.ctx;componentFrames=previous.componentFrames;drawingPresenter=previous.drawingPresenter;paintScale=previous.paintScale;previewDrawing=previous.previewDrawing;activeComponentTokens=previous.activeComponentTokens;activeComponentAssistance=previous.activeComponentAssistance;}
+}
+
+function prepareScene(now,preview=null){
  runtimePerf.prepares=(runtimePerf.prepares||0)+1;
  const stage=layout.stage?.()||{width:1000,height:850,originX:0,originY:0,scale:1};
  const raster=layout.raster?.(stage,window.devicePixelRatio||1,window.innerWidth,window.innerHeight,params.has('stage'))||{width:stage.width,height:stage.height,ratio:1};
  paintScale=stage.scale*raster.ratio;uiInfo.raster=raster;
 
- const s=displayInputs(state,now),live=s.connected&&(qa||now-lastInputAt<1000);
+ const s=preview?.state||displayInputs(state,now),live=s.connected&&(preview||qa||now-lastInputAt<1000);
+ let sceneAssist=preview?.assist||assistView;const sceneBall=preview?.ball??gBallView;
  const online=demo||live;angle=online?s.angle:null;
- if(!online||performance.now()-assistView.processedAt>400)assistView={fresh:false,unloaded:[false,false,false,false]};
+ if(!preview&&(!online||performance.now()-sceneAssist.processedAt>400)){assistView={fresh:false,unloaded:[false,false,false,false]};sceneAssist=assistView;}
  layout.begin();
- uiInfo.waiting=!demo&&telemetryWaiting(s.game,now);
- for(const key of ['absActive','tcActive','escActive'])if(online&&s.game?.statuses?.[key]===true)latch[key]=now+220;
- for(let i=0;i<4;i++)advanceWheelLock(s,online,assistView,i,now);
- const presented=presentationView(assistView,now);
+ const sceneWaiting=preview?(preview.waiting??!s.game?.available):!demo&&telemetryWaiting(s.game,now);uiInfo.waiting=sceneWaiting;
+ for(const key of ['absActive','tcActive','escActive'])if(!preview&&online&&s.game?.statuses?.[key]===true)latch[key]=now+220;
+ if(!preview)for(let i=0;i<4;i++)advanceWheelLock(s,online,sceneAssist,i,now);
+ const presented=preview?(preview.displayAssist||sceneAssist):presentationView(sceneAssist,now);
+ const sceneLocks=preview?.locks||lockState.map(x=>({...x})),sceneLatches=preview?.latches||{...latch};
+ const input={state:s,assist:sceneAssist,displayAssist:presented,ball:sceneBall,now,online,sampleAt:preview?now:lastInputAt,locks:sceneLocks,latches:sceneLatches,waiting:sceneWaiting};
+ const sceneFrames=preview?{}:componentRenderer?.prepare(input,reducedComponentMotion?.matches===true||document.hidden)||{};
+ if(!preview)componentFrames=sceneFrames;
+ const rawGroups=[];
+ const sceneGroup=(id,draw)=>{const definition=layout.byId?.get(id);if(!definition)return;rawGroups.push({id,bounds:definition.bounds,draw});layout.group(id,()=>paintRegisteredComponent(componentRenderer,id,ctx,definition.bounds,draw,sceneFrames,paintScale,false));};
  const retained=params.get('edit')==='1'?null:componentPaint;
- layout.group('brake',()=>bar(70,online?s.brake:0,UI.colors.brake,'刹车',online,presented.brake));
- layout.group('throttle',()=>bar(930,online?s.throttle:0,UI.colors.throttle,'油门',online,presented.drive));
+ sceneGroup('brake',()=>bar(70,online?s.brake:0,UI.colors.brake,'刹车',online,presented.brake,'brake'));
+ sceneGroup('throttle',()=>bar(930,online?s.throttle:0,UI.colors.throttle,'油门',online,presented.drive,'throttle'));
  const wheelSettings=layout.get?.().wheel||{faceId:'default',dashboardMode:'auto',buttonMaps:{}};
  const overrides=wheelSettings.buttonMaps?.[activeFace.id]||{};
  controls=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls(activeFace,overrides,s.inputProfile?.buttonMap):activeFace.controls.map((c,i)=>({...c,b:Number.isInteger(s.inputProfile?.buttonMap?.[i])?[s.inputProfile.buttonMap[i]]:c.b.slice()}));
+ const sceneControls=controls.slice();
  encoders=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls({...activeFace,controls:activeFace.encoders},overrides):activeFace.encoders;
  const pressed=new Set(online?s.buttons:[]);let led=s.leds||{};const liveButtonLights=activeFace.id==='default'&&online&&buttonLightsAvailable(led);
  uiInfo.ambientButtons=!liveButtonLights;
  const ambientPeriod=1000/30,ambientAt=Math.floor(now/ambientPeriod)*ambientPeriod;
- const tendency=assistView.grip?.steeringState;
- const ambientAlert=Math.max(0,Math.min(tendency?.front||0,tendency?.rear||0),...Object.values(assistView.grip?.axles||{}).map(x=>x.overrun||0),...(s.game?.speedKmh>10?s.game?.wheels||[]:[]).map(w=>Math.max(0,Math.min(1,(-(w.ratio||0)-.65)/.35))));
+ const tendency=sceneAssist.grip?.steeringState;
+ const ambientAlert=Math.max(0,Math.min(tendency?.front||0,tendency?.rear||0),...Object.values(sceneAssist.grip?.axles||{}).map(x=>x.overrun||0),...(s.game?.speedKmh>10?s.game?.wheels||[]:[]).map(w=>Math.max(0,Math.min(1,(-(w.ratio||0)-.65)/.35))));
  // Screen-only fallback: game-reported shift thresholds, not a hardware LED acknowledgement.
  if(!(activeFace.id==='default'&&online&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&!uiInfo.waiting&&s.game?.available){
   const lights=shiftLightColors(s.game,now);
@@ -598,9 +635,9 @@ function prepareScene(now){
   return {e,color,ambient,position:knobPositions[n]};
  });
  uiInfo.ambientKnobs=knobPaint.some(x=>x.ambient);
- const dash=window.DashRenderer,page=Number(params.get('page')||1);
+ const dash=preview?.dashboard||window.DashRenderer,page=Number(params.get('page')||1);
  const inlineDash=activeFace.dashboard&&wheelSettings.dashboardMode==='auto'?dash?.prepare({game:s.game},page):null;
- const separateDash=wheelSettings.dashboardMode==='separate'?dash?.prepare({game:s.game},page):null;
+ const separateDash=preview||wheelSettings.dashboardMode==='separate'?dash?.prepare({game:s.game},page):null;
  const imageReady=image.complete&&image.naturalWidth;
  // Telemetry only invalidates the bitmap when it changes a drawn value.
  const faceKey=JSON.stringify([activeFace.id,imageReady,mappingHighlight,paintScale,[...pressed],
@@ -617,55 +654,57 @@ function prepareScene(now){
  for(let i=0;i<ledShapes.length;i++){const points=ledShapes[i].points,light=rpmPaint[i];ctx.beginPath();ctx.moveTo(...points[0]);for(const p of points.slice(1))ctx.lineTo(...p);ctx.closePath();ctx.lineJoin='round';ctx.lineWidth=activeFace.ledStroke??7;ctx.strokeStyle='#171b20';ctx.fillStyle='#11171e';ctx.stroke();ctx.fill();
   if(light){ctx.fillStyle=light;ctx.fill();}ctx.lineWidth=1.3;ctx.strokeStyle=light?'#d9e5eb55':'#53617088';ctx.stroke();
  }
- for(const {c,color,highlight} of buttonPaint){if(c.led!==undefined)buttonCap(c,color,!liveButtonLights);if(highlight){circle(c.x,c.y,c.r+10,'#ffffff22','#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00','#ffdc48',4);}}
+ for(const {c,color,highlight} of buttonPaint){if(c.led!==undefined)buttonCap(c,color,!liveButtonLights);if(highlight){circle(c.x,c.y,c.r+10,'#ffffff22',activeComponentTokens?.boundary||'#fff',5);circle(c.x,c.y,c.r+16,'#ffffff00',activeComponentTokens?.boundary||'#ffdc48',4);}}
  for(const {e,color,ambient,position} of knobPaint){
-  if(activeFace.id!=='default'){if(color&&e.lightPoints){ctx.save();ctx.beginPath();ctx.moveTo(...e.lightPoints[0]);for(const point of e.lightPoints.slice(1))ctx.lineTo(...point);ctx.closePath();ctx.globalAlpha=.38;ctx.fillStyle=color;ctx.fill();ctx.restore();}if(e.id===mappingHighlight||e.b.some(b=>pressed.has(b)))circle(e.x,e.y,e.r+8,'#ffffff00','#ffdc48',4);continue;}
+  if(activeFace.id!=='default'){if(color&&e.lightPoints){ctx.save();ctx.beginPath();ctx.moveTo(...e.lightPoints[0]);for(const point of e.lightPoints.slice(1))ctx.lineTo(...point);ctx.closePath();ctx.globalAlpha=.38;ctx.fillStyle=color;ctx.fill();ctx.restore();}if(e.id===mappingHighlight||e.b.some(b=>pressed.has(b)))circle(e.x,e.y,e.r+8,'#ffffff00',activeComponentTokens?.boundary||'#ffdc48',4);continue;}
   // Concentric graphite bezel, fine detent marks and one selected sector.
   circle(e.x,e.y,69,'#0b1017','#778493',2);circle(e.x,e.y,64,'#202a36','#05090e',3);
   for(let i=0;i<12;i++){const a=i*Math.PI/6-Math.PI/2,selected=i===position;ctx.beginPath();ctx.arc(e.x,e.y,53,a+.045,a+Math.PI/6-.045);ctx.lineWidth=selected?17:10;ctx.strokeStyle=selected?(color||'#d8e5ee'):'#344150';ctx.stroke();
-   ctx.beginPath();ctx.moveTo(e.x+60*Math.cos(a),e.y+60*Math.sin(a));ctx.lineTo(e.x+65*Math.cos(a),e.y+65*Math.sin(a));ctx.strokeStyle=selected?'#edf8ff':'#81909f';ctx.lineWidth=2;ctx.stroke();
+   ctx.beginPath();ctx.moveTo(e.x+60*Math.cos(a),e.y+60*Math.sin(a));ctx.lineTo(e.x+65*Math.cos(a),e.y+65*Math.sin(a));ctx.strokeStyle=selected?(activeComponentTokens?.text||'#edf8ff'):(activeComponentTokens?.boundary||'#81909f');ctx.lineWidth=2;ctx.stroke();
   }
   if(color){ctx.save();ctx.shadowColor=color;ctx.shadowBlur=(ambient?15:0)*paintScale;ctx.beginPath();ctx.arc(e.x,e.y,65,0,Math.PI*2);ctx.strokeStyle=color;ctx.lineWidth=ambient?4:3;ctx.stroke();ctx.restore();}
   const cap=ctx.createRadialGradient(e.x-10,e.y-12,2,e.x,e.y,38);cap.addColorStop(0,'#404c58');cap.addColorStop(1,'#141c26');circle(e.x,e.y,37,cap,'#080e16',3);
   for(let j=0;j<20;j++){const a=j*Math.PI/10;ctx.beginPath();ctx.moveTo(e.x+33*Math.cos(a),e.y+33*Math.sin(a));ctx.lineTo(e.x+37*Math.cos(a),e.y+37*Math.sin(a));ctx.strokeStyle='#76839166';ctx.lineWidth=1.5;ctx.stroke();}
-  text(position===null?'—':String(position+1),e.x,e.y,UI.sizes.wheelKnob,'#f1f7ff');
-  if(e.b.some(b=>pressed.has(b)))circle(e.x,e.y,73,'#ffffff00','#ffdc48',4);
+  text(position===null?'—':String(position+1),e.x,e.y,UI.sizes.wheelKnob,activeComponentTokens?.text||'#f1f7ff');
+  if(e.b.some(b=>pressed.has(b)))circle(e.x,e.y,73,'#ffffff00',activeComponentTokens?.boundary||'#ffdc48',4);
  }
- for(const c of controls){const active=c.b.filter(b=>pressed.has(b));if(active.length)text(active.join('·'),c.x,c.y,c.r<20?18:23,'#eafaff');}
- const extra=[...pressed].filter(n=>!controls.some(c=>c.b.includes(n)));
- if(extra.length&&activeFace.id==='default')text(extra.slice(0,8).join(' · '),657,680,27,'#eafaff');
+ for(const c of sceneControls){const active=c.b.filter(b=>pressed.has(b));if(active.length)text(active.join('·'),c.x,c.y,c.r<20?18:23,activeComponentTokens?.text||'#eafaff');}
+ const extra=[...pressed].filter(n=>!sceneControls.some(c=>c.b.includes(n)));
+ if(extra.length&&activeFace.id==='default')text(extra.slice(0,8).join(' · '),657,680,27,activeComponentTokens?.text||'#eafaff');
  };
- layout.group('wheel',()=>{
+ sceneGroup('wheel',()=>{
  const density=wheelDensity();
  ctx.save();ctx.translate(500,450);ctx.rotate(paintAngle*Math.PI/180);ctx.scale(740/1315,740/1315);
  // Calibrated opaque rim: x=76..1234, y=33..1172. Correct the original
  // photograph before rotation; all buttons and the dashboard share this transform.
  ctx.scale(...activeFace.calibration);ctx.translate(-activeFace.center[0],-activeFace.center[1]);
  paintWheelLayer('photo',photoKey,density,drawPhoto);
- if(inlineDash)ctx.drawImage(dash.paint(inlineDash,displayAngle),...activeFace.dashboard);
+ if(inlineDash)ctx.drawImage(dash.paint(inlineDash,displayAngle,activeComponentTokens,activeComponentAssistance),...activeFace.dashboard);
  paintWheelLayer('lights',faceKey,density,drawLights);
  ctx.restore();
- waitingBadge(uiInfo.waiting);
+ waitingBadge(sceneWaiting);
  });
- layout.group('dashboard',()=>{if(separateDash)ctx.drawImage(dash.paint(separateDash,0),370,210,260,83);});
- for(let i=0;i<4;i++)layout.group('slip'+i,()=>wheelSlip(s,online,assistView,i,false));
- drivingUi(s,online,presented);
- layout.group('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
+ sceneGroup('dashboard',()=>{if(separateDash)ctx.drawImage(dash.paint(separateDash,0,activeComponentTokens,activeComponentAssistance),370,210,260,83);});
+ for(let i=0;i<4;i++)sceneGroup('slip'+i,()=>wheelSlip(s,online,sceneAssist,i,false,now,sceneLocks));
+ drivingUi(s,online,presented,sceneGroup);
+ sceneGroup('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
  });
- layout.group('statuses',()=>statuses(s,online,false));
+ sceneGroup('statuses',()=>statuses(s,online,false,now,sceneLatches));
 
- layout.group('gBall',()=>drawGBall(gBallView));
- layout.group('flags',()=>{if(online)flagBanner(s.game);});
- finishScene(stage,raster,retained,s,online,presented,now,wheelKey,separateDash?.key??null);
+ sceneGroup('gBall',()=>drawGBall(sceneBall));
+ sceneGroup('flags',()=>{if(online)flagBanner(s.game,sceneWaiting);});
+ if(preview)return {rawGroups,input,sampleId:preview.sampleId};
+ finishScene(stage,raster,retained,s,online,presented,now,wheelKey,separateDash?.key??null,rawGroups,input);
 }
 
 // Three independent clocks: telemetry owns estimation; this 30 Hz fallback owns
 // decoration/deadlines; requestAnimationFrame only submits the newest prepared scene.
 let preparedScene=null,paintPending=false,sceneTimer=null,sceneSignature=null;
-function finishScene(stage,raster,retained,s,online,presented,now,faceKey,dashboardKey){
+function finishScene(stage,raster,retained,s,online,presented,now,faceKey,dashboardKey,rawGroups,input){
  const jobs=layout.capture?.();
- const keys=Object.fromEntries((jobs||[]).map(j=>[j.id,JSON.stringify(componentKey(j.id,s,online,presented,now,faceKey,dashboardKey))]));
- preparedScene={stage,raster,retained,jobs,keys,game:s.game};
+ const keys=Object.fromEntries((jobs||[]).map(j=>[j.id,JSON.stringify([componentKey(j.id,s,online,presented,now,faceKey,dashboardKey),componentRenderKey(componentFrames[j.id])])]));
+ preparedScene={stage,raster,retained,jobs,keys,game:s.game,rawGroups,input};
+ rememberPreviewInput(input);
  const signature=JSON.stringify([stage,raster,jobs?.map(j=>[j.id,j.c]),keys,layout.selection?.()]);
  if(signature===sceneSignature)return;sceneSignature=signature;
  if(!qa&&!paintPending){paintPending=true;requestAnimationFrame(render);}
@@ -758,8 +797,8 @@ async function consume(incoming,receivedAt){
   let result;const processAt=performance.now();
   try{
    if(processor)result=await processor.run(frame.incoming,frame.receivedAt,frame.contextEpoch);
-   else{if(!assistModel||assistModelContext!==frame.contextEpoch){assistModel=createAssistModel();assistModelContext=frame.contextEpoch;}result={ok:true,view:assistModel.update(frame.incoming,frame.receivedAt),costMs:performance.now()-processAt,mode:'main'};}
-  }catch(error){assistModel=null;result={ok:false,error:{code:'model-error',message:String(error?.message||error)},mode:processor?.status().mode||'main'};}
+   else{if(!assistModel||assistModelContext!==frame.contextEpoch){try{assistModel?.dispose?.();}catch{}assistModel=createAssistModel();assistModelContext=frame.contextEpoch;}result={ok:true,view:assistModel.update(frame.incoming,frame.receivedAt),costMs:performance.now()-processAt,mode:'main'};}
+  }catch(error){try{assistModel?.dispose?.();}catch{}assistModel=null;result={ok:false,error:{code:'model-error',message:String(error?.message||error)},mode:processor?.status().mode||'main'};}
   runtimePerf.processingMode=result.mode;runtimePerf.polls++;
   if(frame.incoming.game?.packet!==runtimePerf.lastPacket){runtimePerf.uniquePackets++;runtimePerf.lastPacket=frame.incoming.game?.packet;}
   const current=frame.feedEpoch===feedEpoch&&frame.contextEpoch===inputContextEpoch;
@@ -806,4 +845,19 @@ async function poll(){
  setTimeout(poll,Math.max(0,1000/60-(performance.now()-requestAt)));
 }
 if(!demo&&!qa){openStream();openSteeringStream();poll();}startSceneClock();
+const previewFactory=typeof ComponentPreview!=='undefined'?ComponentPreview.createFactory({
+ selection:componentSnapshot?.selection||{},
+ getLive:()=>preparedScene?.input?{input:preparedScene.input,history:livePreviewHistory}:null,
+ buildScene:(input,{dashboard,sampleId})=>{
+  const saved={ctx,componentFrames,drawingPresenter,paintScale,previewDrawing,activeComponentTokens,activeComponentAssistance,presentation,presentationAt,controls,encoders,knobs:knobPositions.slice(),angle,displayAngle,paintAngle,ui:{...uiInfo},prepares:runtimePerf.prepares};
+  try{return layout.collect(()=>prepareScene(input.now,{...input,dashboard,sampleId}));}
+  finally{ctx=saved.ctx;componentFrames=saved.componentFrames;drawingPresenter=saved.drawingPresenter;paintScale=saved.paintScale;previewDrawing=saved.previewDrawing;activeComponentTokens=saved.activeComponentTokens;activeComponentAssistance=saved.activeComponentAssistance;presentation=saved.presentation;presentationAt=saved.presentationAt;controls=saved.controls;encoders=saved.encoders;knobPositions.splice(0,knobPositions.length,...saved.knobs);angle=saved.angle;displayAngle=saved.displayAngle;paintAngle=saved.paintAngle;for(const key of Object.keys(uiInfo))if(!(key in saved.ui))delete uiInfo[key];Object.assign(uiInfo,saved.ui);runtimePerf.prepares=saved.prepares;}
+ },
+ paint:(target,{job,renderer,input,width,height})=>{
+  const [x,y,w,h]=job.bounds,pad=36,scale=Math.min((width-24)/(w+pad*2),(height-24)/(h+pad*2)),saved={paintAngle,displayAngle};
+  target.save();try{target.translate(width/2,height/2);target.scale(scale,scale);target.translate(-x-w/2,-y-h/2);paintAngle=displayAngle=Number.isFinite(input.state.angle)?input.state.angle:0;paintRegisteredComponent(renderer,job.id,target,job.bounds,job.draw,renderer.frames,scale,true);}finally{paintAngle=saved.paintAngle;displayAngle=saved.displayAngle;target.restore();}
+ }
+}):null;
+window.ComponentPreviewBridge={create:()=>{if(!previewFactory)throw Error('组件预览尚未初始化');return previewFactory();},diagnostics:()=>previewFactory?.diagnostics()};
+
 window.overlayDiagnostics={get controls(){return controls;},get encoders(){return encoders;},getPerformance,getGBall:()=>gBallView,resetGPeak:()=>{if(!gBallModel)return;gBallModel.clearPeak();const now=performance.now();gBallView=gBallModel.view(now);queueScene(now);return {ok:true};},getUi:()=>({...uiInfo}),getState:()=>state,getHardwareStatus,getAssist:()=>assistView,getPresentation:()=>presentation,getPaint:()=>componentPaint?.stats,getWheelFace:()=>({...wheelFaceStats,photo:{...wheelFaceStats.photo},lights:{...wheelFaceStats.lights},dashboard:window.DashRenderer?.getPerformance?.()}),getDisplay:()=>displayFrame?{...displayFrame}:null,renderTest:at=>{if(qa){prepareScene(at??performance.now());render();}},paintTest:()=>{if(qa)render();},setTestState:testState};
