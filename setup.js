@@ -5,7 +5,7 @@ let cfg={},state={},learning=null,buttonLearning=false,previousButtons=[],active
 let configToken=null,disposed=false,pollEpoch=0,pollRequest=null,configEpoch=0,configRequest=null,saveRequest=null,saveUncertain=false,resumeButtons=false;
 function text(selector,value){const node=$(selector);if(node.textContent!==value)node.textContent=value;}
 const bindings={};
-function message(text,error=false){$('#message').textContent=text;$('#message').dataset.tone=error?'danger':'info';$('#message').setAttribute('role',error?'alert':'status');}
+function message(text,error=false){$('#message').textContent=text;$('#message').hidden=!text;$('#message').dataset.tone=error?'danger':'info';$('#message').setAttribute('role',error?'alert':'status');}
 function mapping(k){return k==='handbrake2'?cfg.inputs?.handbrakeInputs?.[1]:k==='handbrake'&&cfg.inputs?.handbrakeInputs?cfg.inputs.handbrakeInputs[0]:cfg.inputs?.[k];}
 function data(){const inputs={};for(const[k,v]of Object.entries(bindings))if(k!=='handbrake2')inputs[k]=v;if(bindings.handbrake2){inputs.handbrakeInputs=[bindings.handbrake,bindings.handbrake2];delete inputs.handbrake;}return {inputs,steeringRange:Number($('#range').value),buttonMap:cfg.buttonMap||[],ledObserver:$('#led').checked};}
 function changed(){return loaded&&JSON.stringify(data())!==baseline;}
