@@ -608,11 +608,11 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   ipcMain.handle('updates-state',e=>updateResult(e,()=>({ok:true,state:updateService.snapshot()})));
   ipcMain.handle('updates-check',e=>updateResult(e,()=>updateService.check(true)));
   ipcMain.handle('updates-download',(e,kind)=>updateResult(e,()=>['setup','hotfix'].includes(kind)?updateService.download(kind):{ok:false,error:'未知更新类型'}));
-  ipcMain.handle('updates-import',e=>updateResult(e,async()=>{const target=manager,result=await dialog.showOpenDialog(target,{title:'导入 hotfix 或盘面包',properties:['openFile'],filters:[{name:'模块包 JSON',extensions:['json']}]});if(result.canceled)return {ok:true,cancelled:true};if(target!==manager||!trustedManager(e))return {ok:false,error:'管理窗口已变化'};return updateService.inspectLocal(result.filePaths[0]);}));
+  ipcMain.handle('updates-import',e=>updateResult(e,async()=>{const target=manager,result=await dialog.showOpenDialog(target,{title:'导入算法、组件或盘面包',properties:['openFile'],filters:[{name:'扩展包 JSON',extensions:['json']}]});if(result.canceled)return {ok:true,cancelled:true};if(target!==manager||!trustedManager(e))return {ok:false,error:'管理窗口已变化'};return updateService.inspectLocal(result.filePaths[0]);}));
   ipcMain.handle('updates-apply',e=>updateResult(e,()=>updateService.applyPending(),true));
   ipcMain.handle('updates-install',e=>updateResult(e,()=>updateService.install()));
   ipcMain.handle('updates-clear',e=>updateResult(e,()=>updateService.clearModules(),true));
-  ipcMain.handle('updates-release',e=>updateResult(e,async()=>{const url=updateService.snapshot().release?.url;if(!url||!/^https:\/\/github\.com\//i.test(url))return {ok:false,error:'Release 页面暂不可用'};await shell.openExternal(url);return {ok:true};}));
+  ipcMain.handle('updates-release',e=>updateResult(e,async()=>{const url=updateService.snapshot().release?.url;if(!url||!/^https:\/\/github\.com\//i.test(url))return {ok:false,error:'发布说明暂不可用，请稍后重试'};await shell.openExternal(url);return {ok:true};}));
   ipcMain.handle('layout-shortcut-get',e=>trustedManager(e)?shortcutState():{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
   ipcMain.handle('layout-shortcut-recording',(e,value)=>trustedManager(e)&&typeof value==='boolean'?setLayoutShortcutRecording(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
   ipcMain.handle('layout-shortcut-set',(e,value)=>trustedManager(e)?registerLayoutShortcut(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});

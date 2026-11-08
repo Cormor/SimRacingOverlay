@@ -15,7 +15,7 @@
   function sample(time,source,component){
    const tick=Math.floor(Math.max(0,time)*30/1000),key=epoch+':'+source+':'+component+':'+tick;if(cached?.key===key)return cached;
    const live=source==='auto'?getLive():null;
-   if(live?.input.online&&live.input.state.game?.available){const input=copy(live.input),history=copy(live.history);cached={key,input,history,source:'live',label:'实际遥测 · 同一输入快照',sampleId:'live:'+input.state.game.packet+':'+input.sampleAt};}
+   if(live?.input.online&&live.input.state.game?.available){const input=copy(live.input),history=copy(live.history);cached={key,input,history,source:'live',label:'实时',sampleId:'live:'+input.state.game.packet+':'+input.sampleAt};}
    else{
     const targetTick=30+tick,target=targetTick*(1000/30);
     if(!demo||demo.component!==component||targetTick<demo.tick){destroyDemo();demo={component,model:new root.DrivingAssist.Model({componentSelection:selection}),ball:new root.GBall.Model(null),dashboard:root.DashRenderer.createRenderer(),tick:Math.max(0,targetTick-12),packet:0,history:[]};}
@@ -23,7 +23,7 @@
     if(!demo.input)step(demo.tick*(1000/30));
     // Keep the same 30Hz input history independent of which comparison side draws.
     for(let at=demo.tick+1;at<=targetTick;at++)step(at*(1000/30));demo.tick=targetTick;
-    cached={key,input:copy(demo.input),history:copy(demo.history),source:'demo',label:'演示输入 · 不写入实际遥测',sampleId:'demo:'+epoch+':'+component+':'+target,dashboard:demo.dashboard};
+    cached={key,input:copy(demo.input),history:copy(demo.history),source:'demo',label:'演示',sampleId:'demo:'+epoch+':'+component+':'+target,dashboard:demo.dashboard};
    }
    cached.scene=buildScene(cached.input,{dashboard:cached.dashboard||(liveDashboard||=root.DashRenderer.createRenderer()),sampleId:cached.sampleId});cached.input=cached.scene.input;diagnostics.samples++;return cached;
   }

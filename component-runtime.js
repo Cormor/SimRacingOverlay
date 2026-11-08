@@ -28,7 +28,7 @@
     if(!assistances.some(a=>a.id===selected.assistance))return {ok:false,error:component.label+'的显示辅助模式无效'};
     if(!algorithm||algorithm.contract!==component.contract||algorithm.components&&!algorithm.components.includes(component.id))return {ok:false,error:component.label+'的功能算法不兼容'};
     for(const axis of axes){const definition=get(axis,selected[axis]);
-     if(!definition||definition.contract!==component.contract||definition.components&&!definition.components.includes(component.id))return {ok:false,error:component.label+'的'+axis+'不兼容'};
+     if(!definition||definition.contract!==component.contract||definition.components&&!definition.components.includes(component.id))return {ok:false,error:component.label+'的'+({algorithm:'算法',presentation:'样式',animation:'动画',theme:'配色'})[axis]+'不兼容'};
      if(axis!=='algorithm'&&definition.requires.some(cap=>!algorithm.provides.includes(cap)))return {ok:false,error:definition.label+'需要当前算法未提供的能力'};
     }
     selection[component.id]=selected;

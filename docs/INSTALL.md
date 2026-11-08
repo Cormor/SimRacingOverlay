@@ -51,3 +51,7 @@ $p.ExitCode
 ## 管理窗口启动确认
 
 启动入口等到管理窗口创建、页面加载并确认导航结果后才报告已打开。重复启动复用同一桌面会话；保存失败或设备页拒绝离开时，保留当前编辑并返回具体原因。最近一次开窗请求的标识、动作、结果与错误保存在 `runtime/desktop-status.json` 的 `lastOpenRequest`，用于区分页面加载问题与真实编辑拒绝。
+
+## 启动与安装失败
+
+启动器的最近失败保存在安装目录 `runtime/launcher-state.json`。安装器将最近一次失败的完整错误保存在 `%LOCALAPPDATA%/SimRacingOverlay/installer-last-error.json`，每次失败覆盖前一次，不累计历史。界面显示可操作的中文提示，不直接展示 PowerShell 输出。

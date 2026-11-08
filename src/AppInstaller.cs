@@ -28,6 +28,22 @@ internal static class AppInstaller
             if (File.Exists(file)) File.Replace(temporary, file, null); else File.Move(temporary, file);
         } finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
+    static string UserError(Exception error)
+    {
+        string detail = error.ToString();
+        // Keep the last failure as one diagnostic snapshot; never show script output in a dialog.
+        try {
+            string folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SimRacingOverlay");
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(Path.Combine(folder, "installer-last-error.json"), Json.Serialize(new { time = DateTime.UtcNow.ToString("O"), error = detail }), new UTF8Encoding(false));
+        } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        if (detail.IndexOf("Choose an empty folder", StringComparison.OrdinalIgnoreCase) >= 0) return "请选择空文件夹或现有的 SimRacingOverlay 安装目录。";
+        if (detail.IndexOf("Choose an application folder", StringComparison.OrdinalIgnoreCase) >= 0) return "请选择应用文件夹，不能直接安装到磁盘根目录。";
+        if (detail.IndexOf("save-and-close endpoint", StringComparison.OrdinalIgnoreCase) >= 0 || detail.IndexOf("kept the current edit open", StringComparison.OrdinalIgnoreCase) >= 0 || detail.IndexOf("normal close", StringComparison.OrdinalIgnoreCase) >= 0) return "请在管理窗口保存并完成当前编辑，关闭应用后重试。";
+        if (detail.IndexOf("still in progress", StringComparison.OrdinalIgnoreCase) >= 0) return "另一个启动、退出或更新操作正在进行，请稍候重试。";
+        if (error is UnauthorizedAccessException || detail.IndexOf("UnauthorizedAccess", StringComparison.OrdinalIgnoreCase) >= 0) return "无法写入所选目录。请检查文件夹权限，并关闭占用文件的程序后重试。";
+        return "操作未完成，请重试；安装时请使用从发布页重新下载的安装包。错误详情保存在本机应用数据目录 SimRacingOverlay/installer-last-error.json。";
+    }
     static bool InstalledAt(string root)
     {
         string full = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
@@ -60,7 +76,7 @@ internal static class AppInstaller
                 Restart(root);
                 return 0;
             } catch (Exception error) {
-                UpdateState("error", "更新未完成：" + error.Message);
+                UpdateState("error", UserError(error));
                 throw;
             } finally { mutex.ReleaseMutex(); }
         }
@@ -211,11 +227,11 @@ internal static class AppInstaller
                     try {
                         await Task.Run(delegate { return Execute(destination, migration, uninstall); });
                         if (restart) Restart(destination);
-                        status.Text = uninstall ? "卸载完成。用户数据保留在原安装目录。" : restart ? "安装完成，已启动 SimRacingOverlay。" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
+                        status.Text = uninstall ? "卸载完成。用户数据保留在原安装目录。" : restart ? "安装完成，正在打开 SimRacingOverlay…" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
                         close.Text = "完成";
                     } catch (Exception error) {
                         status.Text = "操作未完成。";
-                        MessageBox.Show(form, error.Message, "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(form, UserError(error), "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         action.Enabled = true; browse.Enabled = !uninstall; path.Enabled = !uninstall;
                     } finally { busy = false; close.Enabled = true; }
                 };
@@ -224,7 +240,7 @@ internal static class AppInstaller
                 return 0;
             }
         } catch (Exception error) {
-            if (Array.IndexOf(args, "--quiet") < 0 && !(Array.IndexOf(args, "--root") >= 0 && Array.IndexOf(args, "--restart") >= 0)) MessageBox.Show(error.Message, "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (Array.IndexOf(args, "--quiet") < 0 && !(Array.IndexOf(args, "--root") >= 0 && Array.IndexOf(args, "--restart") >= 0)) MessageBox.Show(UserError(error), "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
             else { try { Console.Error.WriteLine(error.ToString()); } catch (IOException) { } catch (InvalidOperationException) { } }
             return 1;
         }
