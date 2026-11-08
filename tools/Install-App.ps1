@@ -1,7 +1,9 @@
 ﻿param(
  [Parameter(Mandatory=$true)][string]$Payload,
  [string]$InstallPath=(Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'AI\Apps\SimRacingOverlay'),
- [string]$MigrationSource
+ [string]$MigrationSource,
+ [string]$UpdateAttemptId,
+ [string]$UpdateVersion
 )
 $ErrorActionPreference='Stop'
 $Payload=[IO.Path]::GetFullPath($Payload).TrimEnd('\')
@@ -23,7 +25,12 @@ function Assert-PlainTree([string]$Path) {
 if(!(Test-Path -LiteralPath (Join-Path $Payload 'runtime\SimRacingLauncher.exe')) -or !(Test-Path -LiteralPath (Join-Path $Payload 'runtime\OverlayLifecycle.dll'))){throw 'Payload must be an extracted application folder with its complete runtime.'}
 Assert-PlainTree $Payload
 if($InstallPath -ieq $Payload -or $Payload.StartsWith($InstallPath+'\',[StringComparison]::OrdinalIgnoreCase) -or $InstallPath.StartsWith($Payload+'\',[StringComparison]::OrdinalIgnoreCase)){throw 'Payload and installation must be separate directories.'}
-. (Join-Path $Payload 'tools\Lifecycle.ps1')
+ . (Join-Path $Payload 'tools\Lifecycle.ps1')
+function Write-UpdateState([string]$Phase,[string]$Message,[int]$Copied=0,[int]$Total=0) {
+ if(!$UpdateAttemptId){return}
+ $folder=Join-Path $InstallPath 'runtime\updates';New-Item -ItemType Directory -Force -Path $folder|Out-Null
+ Write-OverlayJson (Join-Path $folder 'install-state.json') @{schema=1;attemptId=$UpdateAttemptId;version=$UpdateVersion;phase=$Phase;message=$Message;copied=$Copied;total=$Total;updatedAt=[DateTime]::UtcNow.ToString('O')}
+}
 $link=$null
 if(Test-Path -LiteralPath $InstallPath){
  $target=Get-Item -LiteralPath $InstallPath -Force
@@ -42,6 +49,7 @@ if(!$link -and (Test-Path -LiteralPath $record)){
  if($identity.root -ine $InstallPath){throw 'The installation record belongs to another directory.'}
 }
 if(!$link -and (Test-Path -LiteralPath $InstallPath) -and !(Test-Path -LiteralPath (Join-Path $InstallPath 'runtime\installed-app.json')) -and @((Get-ChildItem -LiteralPath $InstallPath -Force)).Count){throw 'Choose an empty folder or the existing SimRacingOverlay installation.'}
+if($UpdateAttemptId -and (!$identity -or !$identity.installed -or $identity.root -ine $InstallPath -or $link)){throw 'A background update requires the existing installation identity.'}
 $mutex=Enter-OverlayLock
 try {
  $run='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -50,18 +58,25 @@ try {
  foreach($candidate in @($InstallPath,$MigrationSource)){if($candidate -and $existingRun -and (Test-OverlayLauncherEntry $existingRun $candidate)){$ownedRun=$true}}
  if($existingRun -and !$ownedRun){throw 'Another application directory owns the SimRacingOverlay startup entry.'}
  $roots=@($InstallPath,$MigrationSource)|Where-Object {$_ -and (Test-Path -LiteralPath (Join-Path $_ 'runtime\SimRacingLauncher.exe'))}|Select-Object -Unique
+ Write-UpdateState 'stopping' '正在保存并关闭应用…'
  foreach($root in $roots){Stop-OverlayWatcher $root;Stop-OverlayPendingStarts $root;Stop-OverlayRuntime $root}
  if($link){[IO.Directory]::Delete($InstallPath)}
  New-Item -ItemType Directory -Force -Path $InstallPath|Out-Null
  $programFiles=[Collections.Generic.List[string]]::new()
- foreach($file in Get-ChildItem -LiteralPath $Payload -Recurse -File -Force){
+ $payloadFiles=@(Get-ChildItem -LiteralPath $Payload -Recurse -File -Force|Where-Object {!(Is-UserFile $_.FullName.Substring($Payload.Length+1))})
+ $copied=0
+ Write-UpdateState 'copying' '正在更新程序文件…' 0 $payloadFiles.Count
+ foreach($file in $payloadFiles){
   $relative=$file.FullName.Substring($Payload.Length+1)
   if(Is-UserFile $relative){continue}
   $destination=Join-Path $InstallPath $relative
   New-Item -ItemType Directory -Force -Path (Split-Path $destination)|Out-Null
   Copy-OverlayProgramFile $file.FullName $destination
   $programFiles.Add($relative)
+  $copied++
+  Write-UpdateState 'copying' '正在更新程序文件…' $copied $payloadFiles.Count
  }
+ Write-UpdateState 'finalizing' '正在完成安装登记…'
  # Remove superseded manual shells owned by this installation; the launcher
  # and its Start/Stop-Overlay.ps1 dependencies remain the runtime entry chain.
  foreach($relative in @('Start.cmd','Setup.ps1')){

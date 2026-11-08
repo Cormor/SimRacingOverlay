@@ -127,25 +127,43 @@
  async function resetGPeak(button){button.disabled=true;const status=$('gPeakResetStatus');try{const r=await host.resetGPeak();if(r?.ok===false)throw Error(r.error||'重置未完成');$('overviewResetG').textContent='重置本段G峰值';status.textContent='本段G峰值已重置';status.dataset.tone='success';$('overviewGStatus').textContent='本段G峰值已重置';$('overviewGStatus').dataset.tone='success';}catch(e){status.textContent='重置失败：'+e.message;status.dataset.tone='danger';$('overviewGStatus').textContent=status.textContent;$('overviewGStatus').dataset.tone='danger';}finally{button.disabled=false;}}
  $('overviewResetG').onclick=()=>resetGPeak($('overviewResetG'));$('propertyResetG').onclick=()=>resetGPeak($('propertyResetG'));
 
- let updateState={},updateBusy=false,updateError='';
+ let updateState={},updateBusy=false,updateError='',updateEvents=0;
+ const updateIsBusy=()=>updateBusy||['checking','downloading','applying','installing'].includes(updateState.phase);
  function renderUpdate(value){
-  if(!alive)return;updateState=value||{};const v=updateState,p=v.pending,busy=updateBusy||['checking','downloading','applying'].includes(v.phase);
+  if(!alive)return;updateState=value||{};const v=updateState,p=v.pending,busy=updateIsBusy();
   $('updateCurrent').textContent='版本 '+(v.currentVersion||'未知')+(v.effectiveVersion&&v.effectiveVersion!==v.currentVersion?' · 算法版本 '+v.effectiveVersion:'');
-  $('updateStatus').textContent=updateError||v.error||({checking:'正在检查更新…',downloading:'正在下载并校验…',applying:'正在应用…',current:'无需更新',available:'发现可用更新',ready:'更新已准备好'}[v.phase])||v.message||'检查更新或导入本地包。';$('updateStatus').dataset.tone=updateError||v.error?'danger':'info';
+  const installation=v.installation,installing=v.phase==='installing',completed=['idle','current'].includes(v.phase)&&installation?.phase==='completed'&&installation.version===v.currentVersion;
+  const installationText=installation?.message||({preparing:'正在准备更新…',stopping:'正在关闭应用…',copying:'正在替换文件…',finalizing:'正在完成安装…',restarting:'正在重新启动…',completed:'更新完成',error:'更新未完成'}[installation?.phase])||'';
+  const copied=installation?.copied,total=installation?.total,hasProgress=installing&&installation?.phase==='copying'&&Number.isSafeInteger(copied)&&Number.isSafeInteger(total)&&total>0&&copied>=0&&copied<=total;
+  const receivedBytes=v.receivedBytes,totalBytes=v.totalBytes,downloadText=Number.isSafeInteger(receivedBytes)&&receivedBytes>=0?'正在下载并校验… 已下载 '+receivedBytes.toLocaleString()+(Number.isSafeInteger(totalBytes)&&totalBytes>0?' / '+totalBytes.toLocaleString():'')+' 字节':'正在下载并校验…';
+  $('updateStatus').textContent=updateError||v.error||((installing||completed)?installationText:'')||({checking:'正在检查更新…',downloading:downloadText,applying:'正在应用…',current:'无需更新',available:'发现可用更新',ready:'更新已准备好'}[v.phase])||v.message||'检查更新或导入本地包。';$('updateStatus').dataset.tone=updateError||v.error?'danger':completed?'success':'info';
+  $('updateProgress').hidden=!hasProgress;$('updateProgressText').hidden=!hasProgress;
+  if(hasProgress){$('updateProgress').max=total;$('updateProgress').value=copied;$('updateProgressText').textContent='已替换 '+copied+' / '+total+' 个文件 · '+Math.floor(copied/total*100)+'%';}
+  $('page-updates').setAttribute('aria-busy',String(busy));
   $('updateChecked').textContent=v.checkedAt?'上次检查：'+new Date(v.checkedAt).toLocaleString():'';
-  $('updateNavBadge').hidden=!v.available;$('updateReleaseCard').hidden=!v.release;$('updateReleaseTitle').textContent=v.release?'版本 '+v.release.version:'新版本';$('updateNotes').textContent=v.release?.notes||'此版本未提供版本说明。';
-  $('updateRelease').hidden=!v.release?.url;$('updateHotfix').hidden=!v.canHotfix;$('updateSetup').hidden=!v.canSetup;$('updateInstall').hidden=!(p?.kind==='setup');
+  $('updateNavBadge').hidden=!v.available;document.querySelector('[data-page=updates]').setAttribute('aria-label',v.available?'版本与更新，有可用更新':'版本与更新');$('updateReleaseCard').hidden=!v.release;$('updateReleaseTitle').textContent=v.release?'版本 '+v.release.version:'新版本';$('updateNotes').textContent=v.release?.notes||'此版本未提供版本说明。';
+  $('updateRelease').hidden=!v.release?.url;$('updateHotfix').hidden=!v.canHotfix;$('updateSetup').hidden=!v.canSetup||p?.kind==='setup';$('updateInstall').hidden=!(p?.kind==='setup');
   $('updatePending').hidden=!p||p.kind==='setup';$('updatePendingTitle').textContent=p?((p.kind==='wheel'?'盘面包':p.kind==='components'?'组件包':'算法包')+' · '+(p.name||p.version||'本地包')):'';
   $('updatePendingWarning').textContent=p?.executable?'包含可执行代码；应用后会运行并刷新画面，请确认来源。':'应用后更新盘面并刷新画面。';
   const definitionNames={component:'组件',algorithm:'算法',presentation:'样式',animation:'动态',theme:'配色'};$('updateDefinitions').replaceChildren(...(p?.definitions||[]).map(d=>Object.assign(document.createElement('li'),{textContent:(definitionNames[d.kind]||'扩展')+' · '+d.label})));
   $('updateFiles').replaceChildren(...(p?.files||[]).map(file=>Object.assign(document.createElement('li'),{textContent:file})));
   const packages=v.components?.packages||[];$('updateActive').hidden=!v.active&&!packages.length&&!v.components?.error;$('updateActiveText').textContent=[v.active?'当前算法：'+v.active.version+' · '+(v.active.source==='local'?'本地导入':'官方热更新'):'',packages.length?'已安装组件包：'+packages.map(p=>p.id+' '+p.version).join('、'):'',v.components?.error?'组件配置无法读取：'+v.components.error:''].filter(Boolean).join('；');
-  for(const id of ['updateCheck','updateHotfix','updateSetup','updateInstall','updateImport','updateApply','updateClear'])$(id).disabled=busy;
+  for(const id of ['updateCheck','updateHotfix','updateSetup','updateInstall','updateImport','updateApply','updateClear','updateRelease'])$(id).disabled=busy;
  }
- async function updateAction(action){if(updateBusy)return;updateBusy=true;updateError='';renderUpdate(updateState);try{const r=await action();if(!alive)return;if(r?.state)renderUpdate(r.state);if(r?.ok===false&&!r.cancelled)updateError=r.error||'操作未完成';}catch(e){updateError=e.message;}finally{updateBusy=false;if(alive)renderUpdate(updateState);}}
+ // Pushed state is authoritative; a delayed initial read or action reply cannot replace newer progress.
+ async function updateAction(action){if(updateIsBusy())return;updateBusy=true;updateError='';updateEvents++;renderUpdate(updateState);const events=updateEvents;try{const r=await action();if(!alive)return;if(r?.state&&events===updateEvents)renderUpdate(r.state);if(r?.ok===false&&!r.cancelled)updateError=r.error||'操作未完成';}catch(e){if(alive)updateError=e.message;}finally{updateBusy=false;if(alive)renderUpdate(updateState);}}
+ async function installFullUpdate(){
+  if(updateState.pending?.kind!=='setup'){
+   const downloaded=await api.downloadUpdate('setup');
+   if(!alive||downloaded?.ok===false||downloaded?.cancelled)return downloaded;
+   if(downloaded?.state?.pending?.kind!=='setup')throw Error('完整更新尚未准备好，请重试');
+  }
+  if(!alive)return;
+  return api.installUpdate();
+ }
  function prepareUpdate(){if(!canLeaveDevice())return false;cancelFaceIntent();return flush();}
- $('updateCheck').onclick=()=>updateAction(()=>api.checkUpdates());$('updateHotfix').onclick=()=>updateAction(()=>api.downloadUpdate('hotfix'));$('updateSetup').onclick=()=>updateAction(()=>api.downloadUpdate('setup'));$('updateImport').onclick=()=>updateAction(()=>api.importUpdate());$('updateApply').onclick=()=>updateAction(()=>api.applyUpdate());$('updateInstall').onclick=()=>updateAction(()=>api.installUpdate());$('updateClear').onclick=()=>updateAction(()=>api.clearUpdateModules());$('updateRelease').onclick=()=>updateAction(()=>api.openUpdateRelease());
- api.onUpdateState(renderUpdate);api.getUpdateState().then(r=>{if(alive)renderUpdate(r.state||r);}).catch(e=>{if(alive)$('updateStatus').textContent=e.message;});
+ $('updateCheck').onclick=()=>updateAction(()=>api.checkUpdates());$('updateHotfix').onclick=()=>updateAction(()=>api.downloadUpdate('hotfix'));$('updateSetup').onclick=()=>updateAction(installFullUpdate);$('updateImport').onclick=()=>updateAction(()=>api.importUpdate());$('updateApply').onclick=()=>updateAction(()=>api.applyUpdate());$('updateInstall').onclick=()=>updateAction(installFullUpdate);$('updateClear').onclick=()=>updateAction(()=>api.clearUpdateModules());$('updateRelease').onclick=()=>updateAction(()=>api.openUpdateRelease());
+ api.onUpdateState(value=>{updateEvents++;updateError='';renderUpdate(value);});const initialUpdateEvents=updateEvents;api.getUpdateState().then(r=>{if(alive&&initialUpdateEvents===updateEvents&&!updateBusy)renderUpdate(r.state||r);}).catch(e=>{if(alive&&initialUpdateEvents===updateEvents&&!updateBusy){updateError=e.message;renderUpdate(updateState);}});
  function setDeviceActive(){const iframe=$('deviceFrame'),active=alive&&!suspended&&!document.hidden&&page==='inputs'&&!$('devicePanel').hidden;if(active&&!iframe.getAttribute('src')){iframe.src='setup.html?embedded=1';iframe.onload=()=>{iframe.contentWindow.document.documentElement.dataset.theme=document.documentElement.dataset.theme;setDeviceActive();};}else if(iframe.contentWindow)iframe.contentWindow.InputSetup?.setActive(active);}
  // Component choices are drafts; only the host owns persisted selection and HUD reload.
  const componentAxes=[['algorithm','算法','algorithms'],['presentation','样式','presentations'],['animation','动态','animations'],['theme','配色','themes'],['assistance','辅助','assistances']];
