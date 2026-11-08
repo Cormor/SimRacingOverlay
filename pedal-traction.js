@@ -42,7 +42,7 @@
  }
 
  class Observer {
-  constructor(){this.reset();}
+  constructor({severeSlip=true}={}){this.severeSlip=severeSlip;this.reset();}
   reset(){this.rows=[];this.key=null;this.highSince=null;this.result=null;}
   update(s,unloaded,now){
    const g=s.game,time=g.sampleTime;
@@ -65,8 +65,9 @@
    const highSlip=row.slip>=(drive?.45:.65);
    this.highSince=highSlip?this.highSince??time:null;
    // A severe-slip symptom can raise yellow on its own, never red.
-   const state=forceResponse(this.rows)??(this.highSince!==null&&time-this.highSince>=80?'yellow':null);
-   this.result=state?{pedal:drive?'drive':'brake',state,observedAt:now}:null;
+   const response=forceResponse(this.rows);
+   const state=response??(this.severeSlip&&this.highSince!==null&&time-this.highSince>=80?'yellow':null);
+   this.result=state?{pedal:drive?'drive':'brake',state,observedAt:now,evidence:response?'force-response':'sustained-slip'}:null;
    return this.result;
   }
  }

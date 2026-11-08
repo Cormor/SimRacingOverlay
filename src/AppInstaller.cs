@@ -95,6 +95,14 @@ internal static class AppInstaller
             }
         } finally { try { Directory.Delete(temporary, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     }
+    static void Restart(string root)
+    {
+        ProcessStartInfo start = new ProcessStartInfo(Path.Combine(root, "runtime", "SimRacingLauncher.exe"));
+        start.Arguments = "--root " + Quote(root);
+        start.UseShellExecute = false;
+        start.CreateNoWindow = true;
+        Process.Start(start);
+    }
     [STAThread]
     static int Main(string[] args)
     {
@@ -110,7 +118,8 @@ internal static class AppInstaller
 #endif
             string root = Option(args, "--root", defaultRoot);
             string migration = Option(args, "--migration-source", null);
-            if (Array.IndexOf(args, "--quiet") >= 0) { Execute(root, migration, uninstall); return 0; }
+            bool restart = !uninstall && Array.IndexOf(args, "--restart") >= 0;
+            if (Array.IndexOf(args, "--quiet") >= 0) { Execute(root, migration, uninstall); if (restart) Restart(root); return 0; }
             using (Form form = new Form()) {
                 form.Text = uninstall ? "卸载 SimRacingOverlay" : "安装 SimRacingOverlay";
                 form.Font = new Font("Microsoft YaHei UI", 10);
@@ -136,7 +145,8 @@ internal static class AppInstaller
                     status.Text = uninstall ? "正在保存并卸载…" : "正在保存现有配置并安装，请稍候…";
                     try {
                         await Task.Run(delegate { return Execute(destination, migration, uninstall); });
-                        status.Text = uninstall ? "卸载完成。用户数据保留在原安装目录。" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
+                        if (restart) Restart(destination);
+                        status.Text = uninstall ? "卸载完成。用户数据保留在原安装目录。" : restart ? "安装完成，已启动 SimRacingOverlay。" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
                         close.Text = "完成";
                     } catch (Exception error) {
                         status.Text = "操作未完成。";

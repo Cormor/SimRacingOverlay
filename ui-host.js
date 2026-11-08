@@ -90,6 +90,8 @@
  function resumeSavedFace(){if(disposed||!loaded)return;const request=window.WheelFaces?.retryCurrent?.();if(request){faceChanged();void request.finally(faceChanged);}}
  if(window.desktopOverlay.onDrawDemand)subscriptions.push(window.desktopOverlay.onDrawDemand(value=>{if(value)resumeSavedFace();}));
  window.OverlayUIHost={
+  createComponentPreview:()=>window.ComponentPreviewBridge.create(),
+  attachManager:target=>{if(disposed||!target||target.closed||target.location.origin!==location.origin||target.location.pathname!=='/manager.html')return false;child=target;notify();return true;},
   open:page=>{if(disposed)return;resumeSavedFace();if(!loaded&&!layoutRequest)void load();if(child&&!child.closed){child.focus();child.OverlayManager?.navigate(page);return;}child=window.open('manager.html?page='+encodeURIComponent(page),'sro-manager','width=1440,height=960');},
   managerClosed:()=>{child=null;cancelLoad();reference={active:false,paused:false,mode:'ghost'};applyReference();if(pendingLayout||!loaded)void load();},
   snapshot:()=>({layout:layoutSnapshot,loaded,loadError,revision,face:(()=>{const face=window.WheelFaces?.get();if(!face)return null;const profile=typeof activeFace!=='undefined'?activeFace:null;return {...face,geometry:profile?{size:profile.size||(typeof image!=='undefined'?[image.naturalWidth,image.naturalHeight]:null),center:profile.center,calibration:profile.calibration}:null};})()}),getLive,reloadLayout:load,refreshLayout:()=>{if(pendingLayout)void load();},

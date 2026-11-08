@@ -1,12 +1,14 @@
 # 算法维护入口与历史基线
 
-## 当前本机维护关系（2026-11-05）
+## 当前本机维护关系（2026-11-07）
 
-当前 Apps/SimRacingOverlay 指向 `SimRacingOverlay-ui-refactor`。驾驶反馈与各次方案取舍在 `docs/UI-DELIVERY.md`；架构修复与运行身份在 `docs/ARCHITECTURE-REVIEW.md`。下方 2026-10-24 标记是保留的历史存档，不能用它代替当前整条算法与输入链的版本身份。
+源码在 `SimRacingOverlay-ui-refactor`；Apps/SimRacingOverlay 是独立正式安装实体，当前版本以应用索引与现场为准。驾驶反馈与各次方案取舍在 `docs/UI-DELIVERY.md`；架构修复与运行身份在 `docs/ARCHITECTURE-REVIEW.md`。下方 2026-10-24 标记是保留的历史存档，不能用它代替当前整条算法与输入链的版本身份。
 
 当前 `assist.js` 保留 `Feedback.Observer({steering:'state',pedals:null})`、`PedalTraction.Observer`、`LateralSlipState` 与 `FrontSteeringResponse`。前轴增量响应要求至少4个样本、150ms时间跨度，保留最多360ms观察窗，并检查增舵后的力和路径响应；这些是现有算法的证据条件，不是实体转角的显示缓冲。最新架构改造维持其估计语义、参数、渐变和状态组件，原始转向/踏板采样独立于派生计算发布。
 
 MOZA 的 `trial-suite-20261028`、12个固定stash，以及 SimRacingOverlay 的15个历史stash继续保留。它们绑定各自当时的源码/依赖和入口；不能将旧整套载荷直接覆盖当前架构。已发生的 H1/P1/P2 等驾驶反馈继续有效，不因架构修复重新宣称算法可用。下一轮算法比较以当前运行链为共同基线，只替换相应估计语义；踏板保持用户已要求保留的现状。
+
+2026-11-07组件化新增 `pedal-traction.v1` 输出，默认 `pedal.observed-response` 仍消费同一个既有Observer结果，观察窗与阈值不变；可选 `pedal.force-response` 只停用“持续严重滑移独立黄提示”的分支，保留相同力响应计算。原始踏板填充始终即时显示。算法、表现、动画、主题分别注册与选择，完整边界见 `COMPONENT-PLUGINS.md`；其余16项已有读取原结果的固定host适配器与真实渲染桥，目录明确标示固定算法，未替换车辆判定。预览使用隔离演示计算与同一原始绘制，不能把演示结果当实车证据。
 
 ## 历史存档：adaptive-steering-v1-20261024
 
