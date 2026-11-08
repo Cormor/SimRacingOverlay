@@ -225,7 +225,7 @@
   themeDescription.textContent='';themeDescription.hidden=true;
   $('componentCurrentTitle').textContent=c&&!componentCatalogUsable?'上次读取':'当前';
   $('componentCompatibility').textContent=componentError||(componentBusy?'正在应用…':!c?'正在读取组件…':!result.ok?result.reason:componentDirty(c)?'待应用':'');
-  $('componentCompatibility').dataset.tone=componentError||c&&!result.ok?'danger':!c||componentDirty(c)?'info':'success';$('componentCompatibility').setAttribute('role',componentError?'alert':'status');
+  $('componentCompatibility').dataset.tone=componentError||c&&!result.ok?'danger':!c||componentDirty(c)?'info':'success';$('componentCompatibility').setAttribute('role',componentError?'alert':'status');$('componentCompatibility').hidden=!$('componentCompatibility').textContent;
   $('componentApply').disabled=componentBusy||!componentCatalogUsable||!result.ok||!componentDirty(c);$('componentReset').disabled=componentBusy||!componentDirty(c);$('componentRetry').hidden=!componentError;startPaint();
  }
  async function loadComponents(){
