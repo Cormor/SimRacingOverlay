@@ -132,16 +132,26 @@
  function renderUpdate(value){
   if(!alive)return;updateState=value||{};const v=updateState,p=v.pending,busy=updateIsBusy();
   $('updateCurrent').textContent='版本 '+(v.currentVersion||'未知')+(v.effectiveVersion&&v.effectiveVersion!==v.currentVersion?' · 算法版本 '+v.effectiveVersion:'');
-  const installation=v.installation,installing=v.phase==='installing',completed=['idle','current'].includes(v.phase)&&installation?.phase==='completed'&&installation.version===v.currentVersion;
-  const installationText=installation?.message||({preparing:'正在准备更新…',stopping:'正在关闭应用…',copying:'正在替换文件…',finalizing:'正在完成安装…',restarting:'正在重新启动…',completed:'更新完成',error:'更新未完成'}[installation?.phase])||'';
+  const installation=v.installation,installing=v.phase==='installing';
+  const installationText=({preparing:'正在准备更新…',stopping:'正在更新…',copying:'正在更新…',finalizing:'正在更新…',restarting:'正在更新…',error:'更新未完成'}[installation?.phase])||'正在更新…';
   const copied=installation?.copied,total=installation?.total,hasProgress=installing&&installation?.phase==='copying'&&Number.isSafeInteger(copied)&&Number.isSafeInteger(total)&&total>0&&copied>=0&&copied<=total;
   const receivedBytes=v.receivedBytes,totalBytes=v.totalBytes,downloadText=Number.isSafeInteger(receivedBytes)&&receivedBytes>=0?'正在下载并校验… 已下载 '+receivedBytes.toLocaleString()+(Number.isSafeInteger(totalBytes)&&totalBytes>0?' / '+totalBytes.toLocaleString():'')+' 字节':'正在下载并校验…';
-  $('updateStatus').textContent=updateError||v.error||((installing||completed)?installationText:'')||({checking:'正在检查更新…',downloading:downloadText,applying:'正在应用…',current:'无需更新',available:'发现可用更新',ready:'更新已准备好'}[v.phase])||v.message||'检查更新或导入本地包。';$('updateStatus').dataset.tone=updateError||v.error?'danger':completed?'success':'info';
+  const checkedCurrent=v.phase==='current'&&v.checkedAt&&v.release,latest=checkedCurrent&&v.release.version===v.currentVersion;
+  const status=updateError||v.error||(installing?installationText:'')||({checking:'正在检查更新…',downloading:downloadText,applying:'正在应用…',current:checkedCurrent?(latest?'已是最新':v.canSetup?'可更新完整版本':'无需更新'):'',ready:'更新已准备好'}[v.phase])||'';
+  $('updateStatus').textContent=status;$('updateStatus').hidden=!status;$('updateStatus').dataset.tone=updateError||v.error?'danger':latest?'success':'info';
   $('updateProgress').hidden=!hasProgress;$('updateProgressText').hidden=!hasProgress;
   if(hasProgress){$('updateProgress').max=total;$('updateProgress').value=copied;$('updateProgressText').textContent='已替换 '+copied+' / '+total+' 个文件 · '+Math.floor(copied/total*100)+'%';}
   $('page-updates').setAttribute('aria-busy',String(busy));
   $('updateChecked').textContent=v.checkedAt?'上次检查：'+new Date(v.checkedAt).toLocaleString():'';
-  $('updateNavBadge').hidden=!v.available;document.querySelector('[data-page=updates]').setAttribute('aria-label',v.available?'版本与更新，有可用更新':'版本与更新');$('updateReleaseCard').hidden=!v.release;$('updateReleaseTitle').textContent=v.release?'版本 '+v.release.version:'新版本';$('updateNotes').textContent=v.release?.notes||'此版本未提供版本说明。';
+  $('updateNavBadge').hidden=!v.available;document.querySelector('[data-page=updates]').setAttribute('aria-label',v.available?'版本与更新，有可用更新':'版本与更新');$('updateReleaseCard').hidden=!v.release;$('updateReleaseTitle').textContent=v.release?(v.available?'更新至 ':'版本 ')+v.release.version:'新版本';
+  const notes=$('updateNotes'),release=v.release;notes.replaceChildren();
+  if(release){
+   const history=release.history||[];
+   if(v.available&&release.notesStatus!=='complete'){const message=document.createElement('p');message.className='muted';message.textContent=release.notesError?'历史记录暂不可用，以下为目标版本说明。':'此发布未提供完整历史，以下为目标版本说明。';notes.append(message);}
+   if(v.available&&release.notesStatus==='complete'&&history.length){
+    for(const item of history){const section=document.createElement('section'),title=document.createElement('h3'),body=document.createElement('pre');title.textContent='版本 '+item.version;body.textContent=item.notes;section.append(title,body);notes.append(section);}
+   }else{const body=document.createElement('pre');body.textContent=v.available&&release.notesStatus==='complete'?'此更新区间没有单独的变更记录。':release.notes||'此版本未提供版本说明。';notes.append(body);}
+  }
   $('updateRelease').hidden=!v.release?.url;$('updateHotfix').hidden=!v.canHotfix;$('updateSetup').hidden=!v.canSetup||p?.kind==='setup';$('updateInstall').hidden=!(p?.kind==='setup');
   $('updatePending').hidden=!p||p.kind==='setup';$('updatePendingTitle').textContent=p?((p.kind==='wheel'?'盘面包':p.kind==='components'?'组件包':'算法包')+' · '+(p.name||p.version||'本地包')):'';
   $('updatePendingWarning').textContent=p?.executable?'包含可执行代码；应用后会运行并刷新画面，请确认来源。':'应用后更新盘面并刷新画面。';

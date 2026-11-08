@@ -18,7 +18,22 @@ a=p.parse_args()
 if a.setup:
  def asset(file):
   return {'name':file.name,'sha256':hashlib.file_digest(file.open('rb'),'sha256').hexdigest()}
- data={'schema':1,'version':a.version,'setup':asset(a.setup)}
+ # Keep source history in the same public manifest; deleted or local-only Releases
+ # cannot be recovered by enumerating GitHub Release objects.
+ history=[]
+ changelog=(ROOT/'CHANGELOG.md').read_text(encoding='utf-8')
+ sections=re.split(r'^## (\d{1,6}\.\d{1,6}\.\d{1,6})[^\n]*\n',changelog,flags=re.M)
+ seen=set()
+ for i in range(1,len(sections),2):
+  v=sections[i]
+  if v in seen:p.error('duplicate changelog version: '+v)
+  seen.add(v)
+  notes=sections[i+1].strip()
+  if not notes:p.error('empty changelog section: '+v)
+  if tuple(map(int,v.split('.')))<=tuple(map(int,a.version.split('.'))):history.append({'version':v,'notes':notes})
+ history.sort(key=lambda item:tuple(map(int,item['version'].split('.'))))
+ if not any(item['version']==a.version for item in history):p.error('target version is missing from CHANGELOG.md')
+ data={'schema':1,'version':a.version,'setup':asset(a.setup),'releaseNotes':history}
  if a.hotfix:
   a.output.parent.mkdir(parents=True,exist_ok=True)
   hotfix_target=a.output.parent/a.hotfix.name
