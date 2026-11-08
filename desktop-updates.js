@@ -4,6 +4,7 @@ const {createStore}=require('./wheel-store');
 const validateWheel=require('./wheel-profile').validate;
 const componentHost=require('./component-host');
 const REPO='Cormor/SimRacingOverlay',API='https://api.github.com/repos/'+REPO+'/releases/latest';
+const ASSET_API='https://api.github.com/repos/'+REPO+'/releases/assets/';
 const ALGORITHMS=Object.freeze(['telemetry-context.js','tyre-response.js','steering-advisor.js','reserve.js','grip.js','handling.js','legacy-chassis-response.js','chassis-response.js','suspension-contact.js','realtime-response.js','feedback-research.js','pedal-traction.js','assist.js','g-ball.js']);
 const JSON_LIMIT=12*1024*1024,SETUP_LIMIT=768*1024*1024;
 const digest=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
@@ -25,6 +26,7 @@ function allowedUrl(value,initial=false){
  const u=new URL(value);
  if(u.protocol!=='https:'||u.username||u.password||u.hash||u.port&&u.port!=='443')throw Error('更新下载地址不受支持');
  if(u.href===API)return u;
+ if(u.hostname==='api.github.com'&&u.href.startsWith(ASSET_API)&&/^[1-9][0-9]*$/.test(u.href.slice(ASSET_API.length)))return u;
  if(u.hostname==='github.com'&&u.pathname.startsWith('/'+REPO+'/releases/download/'))return u;
  if(!initial&&['release-assets.githubusercontent.com','objects.githubusercontent.com'].includes(u.hostname))return u;
  throw Error('更新只接受 Cormor/SimRacingOverlay 的正式 Release 资产');
@@ -44,7 +46,7 @@ function fetchAsset(url,{request,limit=JSON_LIMIT,file,progress}={}){
   function visit(value,count){
    let u;try{u=allowedUrl(value,count===0);}catch(error){finish(error);return;}
    const current=++hop,fail=error=>{if(current===hop)finish(error);};
-   try{req=request(u,{headers:{'User-Agent':'SimRacingOverlay-updater','Accept':'application/vnd.github+json, application/octet-stream'},timeout:Math.max(1,deadline-Date.now())},incoming=>{
+   try{req=request(u,{headers:{'User-Agent':'SimRacingOverlay-updater','Accept':u.href===API?'application/vnd.github+json':'application/octet-stream'},timeout:Math.max(1,deadline-Date.now())},incoming=>{
     if(done||current!==hop){incoming.destroy();return;}res=incoming;res.on('error',fail);
     if([301,302,303,307,308].includes(res.statusCode)){
      if(count>=4||!res.headers.location){finish(Error('更新下载重定向无效'));return;}
@@ -61,6 +63,19 @@ function fetchAsset(url,{request,limit=JSON_LIMIT,file,progress}={}){
    });req.on('error',fail);req.on('timeout',()=>fail(Error('更新下载超时，请重试')));}catch(error){finish(error);}
   }visit(url,0);
  });
+}
+function releaseHistory(input,installed,target){
+ try{
+  if(!Array.isArray(input))throw Error('此版本未提供跨版本更新日志');
+  const seen=new Set(),entries=input.map(item=>{
+   if(!item||typeof item!=='object')throw Error('更新日志格式无效');
+   const key=version(item.version).join('.');
+   if(seen.has(key)||compare(item.version,target)>0||typeof item.notes!=='string'||!item.notes.trim()||Buffer.byteLength(item.notes)>20000)throw Error('更新日志内容无效');
+   seen.add(key);return {version:item.version,notes:item.notes};
+  });
+  if(compare(target,installed)>0&&!entries.some(item=>compare(item.version,target)===0))throw Error('更新日志缺少目标版本说明');
+  return {history:entries.filter(item=>compare(item.version,installed)>0).sort((a,b)=>compare(a.version,b.version)),notesStatus:'complete',notesError:null};
+ }catch(error){return {history:[],notesStatus:'unavailable',notesError:error.message};}
 }
 function readActive(root,base){
  try{const file=plain(path.join(root,'assets/modules/active.json'));const a=JSON.parse(fs.readFileSync(file,'utf8'));version(a.version);if(a.baseVersion!==base||!/^\w{64}$/.test(a.generation)||!/^[a-f0-9]{64}$/.test(a.generation)||!['official','local'].includes(a.source))return null;return a;}catch{return null;}
@@ -103,19 +118,19 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
   else publish({phase:'installing',installation:installState(value),error:null,message:value.message});
  }
  async function run(fn){if(disposed)return {ok:false,error:'更新服务已退出',state:snapshot()};if(operation||installAttempt)return {ok:false,error:'另一项更新操作正在进行',state:snapshot()};const promise=(async()=>{try{await fn();return {ok:true,state:snapshot()};}catch(error){publish({phase:'error',error:error.message,message:error.message});return {ok:false,error:error.message,state:snapshot()};}})();operation=promise;try{return await promise;}finally{if(operation===promise)operation=null;}}
- function asset(name){const a=releaseData?.assets?.find(a=>a.name===name);if(!a||typeof a.browser_download_url!=='string')throw Error('Release 缺少资产：'+name);const u=allowedUrl(a.browser_download_url,true);const prefix='/'+REPO+'/releases/download/'+encodeURIComponent(releaseData.tag_name)+'/';if(!u.pathname.startsWith(prefix)||decodeURIComponent(u.pathname.slice(prefix.length))!==name)throw Error('更新资产不属于当前 Release');return a;}
+ function asset(name){const a=releaseData?.assets?.find(a=>a.name===name);if(!a||typeof a.browser_download_url!=='string')throw Error('Release 缺少资产：'+name);const u=allowedUrl(a.browser_download_url,true);const prefix='/'+REPO+'/releases/download/'+encodeURIComponent(releaseData.tag_name)+'/';if(!u.pathname.startsWith(prefix)||decodeURIComponent(u.pathname.slice(prefix.length))!==name)throw Error('更新资产不属于当前 Release');if(!Number.isSafeInteger(a.id)||a.id<=0)throw Error('Release 资产编号无效：'+name);return {...a,downloadUrl:ASSET_API+a.id};}
  function entry(value,kind){if(!value)return null;if(typeof value.name!=='string'||value.name!==path.basename(value.name)||!/^[a-f0-9]{64}$/i.test(value.sha256))throw Error('更新清单校验信息无效');if(kind==='hotfix'&&value.kind!==undefined&&!['algorithm','wheel','components'].includes(value.kind))throw Error('不支持此热更新类型');if(value.kind==='components')version(value.moduleVersion);if(kind==='setup'&&!/^SimRacingOverlay-\d+\.\d+\.\d+-Setup\.exe$/.test(value.name))throw Error('完整更新必须为正式 Setup');asset(value.name);return {name:value.name,sha256:value.sha256.toLowerCase(),kind:['wheel','components'].includes(value.kind)?value.kind:'algorithm',moduleVersion:value.moduleVersion};}
  async function check(force=false){if(!force&&lastCheck&&Date.now()-lastCheck<60000)return {ok:true,state:snapshot()};return run(async()=>{
   publish({phase:'checking',error:null,message:'正在检查正式 Release…'});const result=await fetchAsset(API,{request,limit:1024*1024});if(disposed)return;
   const r=parse(result.bytes);if(r.draft||r.prerelease||typeof r.tag_name!=='string'||!r.tag_name.startsWith('v')||!Array.isArray(r.assets))throw Error('最新 Release 信息无效');const v=r.tag_name.slice(1);version(v);
-  releaseData=r;manifest=null;lastCheck=Date.now();const isNew=compare(v,snapshot().officialVersion)>0,release={version:v,url:'https://github.com/'+REPO+'/releases/tag/'+encodeURIComponent(r.tag_name),notes:String(r.body||'').slice(0,20000)};
+  releaseData=r;manifest=null;lastCheck=Date.now();const isNew=compare(v,snapshot().officialVersion)>0,release={version:v,url:'https://github.com/'+REPO+'/releases/tag/'+encodeURIComponent(r.tag_name),notes:String(r.body||'').slice(0,20000),...releaseHistory(undefined,base,v)};
   // Publish discovery before fetching optional metadata: a failed manifest must not hide a real update.
   publish({release,available:isNew,canSetup:false,canHotfix:false,checkedAt:new Date().toISOString()});
   const meta=r.assets.find(a=>a.name==='update-manifest.json');
-  if(meta){const b=await fetchAsset(asset(meta.name).browser_download_url,{request,limit:256*1024});if(disposed)return;const m=parse(b.bytes);if(m.schema!==1||m.version!==v)throw Error('更新清单版本与 Release 不一致');manifest={setup:entry(m.setup,'setup'),hotfix:entry(m.hotfix,'hotfix'),baseVersion:m.baseVersion};}
+  if(meta){const b=await fetchAsset(asset(meta.name).downloadUrl,{request,limit:256*1024});if(disposed)return;const m=parse(b.bytes);if(m.schema!==1||m.version!==v)throw Error('更新清单版本与 Release 不一致');manifest={setup:entry(m.setup,'setup'),hotfix:entry(m.hotfix,'hotfix'),baseVersion:m.baseVersion};Object.assign(release,releaseHistory(m.releaseNotes,base,v));}
   else{const candidate=r.assets.find(a=>a.name==='SimRacingOverlay-'+v+'-Setup.exe'&&/^sha256:[a-f0-9]{64}$/i.test(a.digest||''));if(candidate)manifest={setup:entry({name:candidate.name,sha256:candidate.digest.slice(7)},'setup')};}
   const compatible=manifest?.hotfix&&(['wheel','components'].includes(manifest.hotfix.kind)||manifest.baseVersion===base);
-  publish({phase:isNew?'available':'current',canSetup:!!manifest?.setup&&compare(v,base)>0,canHotfix:!!compatible&&isNew,message:isNew?(manifest?.setup||compatible?'发现新版本 '+v:'发现新版本 '+v+'；此 Release 未提供受校验更新清单，请打开发布页安装'):'当前版本无需更新',error:null});
+  publish({release,phase:isNew?'available':'current',canSetup:!!manifest?.setup&&compare(v,base)>0,canHotfix:!!compatible&&isNew,message:isNew?(manifest?.setup||compatible?'发现新版本 '+v:'发现新版本 '+v+'；此 Release 未提供受校验更新清单，请打开发布页安装'):'当前版本无需更新',error:null});
  });}
  async function download(kind='setup'){return run(async()=>{
   if(!['setup','hotfix'].includes(kind))throw Error('未知更新类型');const spec=manifest?.[kind];if(!spec)throw Error('此 Release 未提供可直接安装的'+(kind==='setup'?'完整更新':'hotfix'));
@@ -124,10 +139,10 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
   const a=asset(spec.name);
   if(kind==='setup'){
    fs.mkdirSync(downloadDir,{recursive:true});const temp=path.join(downloadDir,crypto.randomBytes(8).toString('hex')+'.download');
-   const data=await fetchAsset(a.browser_download_url,{request,limit:SETUP_LIMIT,file:temp,progress:(received,total)=>publish({receivedBytes:received,totalBytes:total})});
+   const data=await fetchAsset(a.downloadUrl,{request,limit:SETUP_LIMIT,file:temp,progress:(received,total)=>publish({receivedBytes:received,totalBytes:total})});
    if(data.sha256!==spec.sha256){fs.unlinkSync(temp);throw Error('完整更新校验失败，请重新下载');}
    if(disposed){fs.unlinkSync(temp);return;}const file=plain(path.join(downloadDir,spec.name));fs.renameSync(temp,file);setup={file,sha256:spec.sha256,version:state.release.version};publish({phase:'ready',pending:{kind:'setup',source:'official',version:state.release.version,files:[spec.name],name:'完整更新 '+state.release.version,executable:true},message:'完整更新已下载；安装前会保存编辑并退出，完整升级后恢复内置算法。',error:null});
-  }else{const data=await fetchAsset(a.browser_download_url,{request});if(data.sha256!==spec.sha256)throw Error('hotfix 校验失败，请重新下载');if(disposed)return;const payload=parse(data.bytes);if(manifest.hotfix.kind==='wheel'){setPending(validateWheel(payload),'official');}else if(manifest.hotfix.kind==='components'){const pack=componentHost.inspectPackage(payload);if(pack.version!==manifest.hotfix.moduleVersion)throw Error('组件包版本与更新清单不一致');setPending(pack,'official');}else{const pack=checkedHotfix(payload,base);if(pack.version!==state.release.version||pack.baseVersion!==manifest.baseVersion)throw Error('hotfix 包与 Release 版本不一致');setPending(pack,'official');}}
+  }else{const data=await fetchAsset(a.downloadUrl,{request});if(data.sha256!==spec.sha256)throw Error('hotfix 校验失败，请重新下载');if(disposed)return;const payload=parse(data.bytes);if(manifest.hotfix.kind==='wheel'){setPending(validateWheel(payload),'official');}else if(manifest.hotfix.kind==='components'){const pack=componentHost.inspectPackage(payload);if(pack.version!==manifest.hotfix.moduleVersion)throw Error('组件包版本与更新清单不一致');setPending(pack,'official');}else{const pack=checkedHotfix(payload,base);if(pack.version!==state.release.version||pack.baseVersion!==manifest.baseVersion)throw Error('hotfix 包与 Release 版本不一致');setPending(pack,'official');}}
  });}
  function setPending(data,source){
   pending={data,source};const component=data.kind==='simracingoverlay-components',wheel=!component&&data.kind!=='simracingoverlay-hotfix';

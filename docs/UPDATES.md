@@ -2,7 +2,9 @@
 
 管理窗的“版本与更新”页可检查正式版本、下载完整更新或 hotfix、导入本地盘面和算法包。检查只更新页面状态和托盘右上角的更新标记，不自动安装、不弹通知窗口。后台启动 15 秒后检查，此后每 6 小时检查；页面也可主动检查。
 
-正式来源固定为 [Cormor/SimRacingOverlay Releases](https://github.com/Cormor/SimRacingOverlay/releases)。预发布和草稿不参与版本提醒。下载通过 Electron 的系统代理通道。完整包、hotfix 和清单必须来自同一 Release；每项资产按清单 SHA-256 检查，重定向仅接受 GitHub 的 Release 资产服务。此哈希保证下载与该仓库发布清单一致，不能当作第三方作者签名。
+正式来源固定为 [Cormor/SimRacingOverlay Releases](https://github.com/Cormor/SimRacingOverlay/releases)。预发布和草稿不参与版本提醒。下载通过 Electron 的系统代理通道。客户端从公开 Release 信息取得资产编号，经固定仓库的官方资产 API 下载清单、完整包和 hotfix；此公开接口无需用户提供 token 或 key。每项资产仍须符合本次 Release 的 tag 和文件名，API 下载以 `Accept: application/octet-stream` 接收文件或其官方重定向；不依赖 `github.com` 的浏览器下载入口。完整包、hotfix 和清单必须来自同一 Release；每项资产按清单 SHA-256 检查，重定向仅接受 GitHub 的 Release 资产服务。此哈希保证下载与该仓库发布清单一致，不能当作第三方作者签名。
+
+更新清单 schema 1 的可选 `releaseNotes: [{version, notes}]` 由仓库 `CHANGELOG.md` 生成。发现新版本时，客户端按实际完整安装版本筛选 `(当前版本, 目标版本]` 的各版日志，并从旧到新分组显示；例如从 1.4.0 升级到 1.6.3，会依次列出该区间内的改动。历史日志缺失或格式异常时，页面保留最新版本说明并提示历史未能读取，仍可检查版本和安装有效更新。已安装当前版本时继续显示该版说明。检查确认本机与最新正式版本一致时显示“已是最新”，本机高于公开版本时显示“无需更新”；安装完成回执保留在诊断记录中，不在页面重复播报版本与重启过程。
 
 ## 完整更新
 
