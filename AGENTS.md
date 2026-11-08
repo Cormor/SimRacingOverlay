@@ -20,6 +20,7 @@
 
 ## 编辑器与算法基线
 
+- 1.7管理窗口的任务结构、文案与状态约定见 `docs/UX-D4.md`；旧 `docs/UE-UI.md` 继续约束HUD编辑几何与显示，旧管理页示意不覆盖D4。
 - UI 和交互规范见 `docs/UE-UI.md`；统一样式在 `ui-theme.js` / `ui.css`。布局 v3 的绘制、命中、旋转、选框与脏区须使用同一变换，绘制时不得隐式 fit。
 - `legacy-chassis-response.js` 保留 v15 观察器。自适应版本仅由适配器提供的 `capabilities.kinematicsProfile=adaptive-steering-v1` 选择；不得按游戏字符串启停算法。旗语是用户明确限定的 iRacing SDK 协议功能。
 - 编辑器检查：`node src/test_layout_editor.js`、`node src/test_dashboard_cache.js`、`node src/test_render_clocks.js`；变更遥测后执行 `tools/test-telemetry.ps1`。算法维护先读 `docs/ALGORITHM-BASELINE.md`。
