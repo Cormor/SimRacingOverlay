@@ -86,7 +86,7 @@
  subscriptions.push(window.desktopOverlay.onManagerState(value=>{sceneNative=value;updateSceneTools();if(!value.sceneInteractive)cancelSceneGesture();}));
  if(window.desktopOverlay.onSceneInputCancelled)subscriptions.push(window.desktopOverlay.onSceneInputCancelled(cancelSceneGesture));
  window.addEventListener('resize',invalidateSelection);
- function getLive(){const s=window.overlayDiagnostics?.getState()||{},input=window.overlayDiagnostics?.getHardwareStatus?.(),devices=input?.devices||[],wheelId=input?.hardware?.channels?.steering?.deviceId,wheel=devices.find(d=>d.id===wheelId);return {state:{connected:s.connected===true,game:s.game,devices,buttons:wheel?.buttons||[]},ui:window.overlayDiagnostics?.getUi()||{},display:window.overlayDiagnostics?.getDisplay?.()??null};}
+ function getLive(){const s=window.overlayDiagnostics?.getState()||{},input=window.overlayDiagnostics?.getHardwareStatus?.(),devices=input?.devices||[],wheelId=input?.hardware?.channels?.steering?.deviceId,wheel=devices.find(d=>d.id===wheelId);return {state:{connected:s.connected===true,game:s.game,hardware:input?.hardware??null,devices,buttons:wheel?.buttons||[]},ui:window.overlayDiagnostics?.getUi()||{},display:window.overlayDiagnostics?.getDisplay?.()??null};}
  function resumeSavedFace(){if(disposed||!loaded)return;const request=window.WheelFaces?.retryCurrent?.();if(request){faceChanged();void request.finally(faceChanged);}}
  if(window.desktopOverlay.onDrawDemand)subscriptions.push(window.desktopOverlay.onDrawDemand(value=>{if(value)resumeSavedFace();}));
  window.OverlayUIHost={

@@ -1,0 +1,49 @@
+/* D4 device input: one scrollable task area and a persistent save owner. */
+html:has(body.device-setup){height:100%;overflow:hidden}
+body.settings-embedded.device-setup{height:100dvh;min-height:0;overflow:hidden}
+body.device-setup main.device-shell{display:grid;grid-template-rows:auto minmax(0,1fr) auto;width:100%;height:100%;max-width:1100px;padding:0;overflow:hidden}
+.device-heading{padding:24px 24px 8px}
+.device-heading h1{margin-bottom:8px}
+.device-heading p{margin:0}
+.device-content{overflow:auto;min-height:0;padding:16px 24px 24px;scroll-padding:16px;overscroll-behavior:contain}
+.device-content .card:last-child{margin-bottom:0}
+.live-inputs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:0}
+.live-inputs dt{color:var(--text-muted);font-size:14px;margin-bottom:4px}
+.live-inputs dd{margin:0;display:flex;flex-direction:column;gap:4px}
+.live-inputs output{font-family:var(--font-mono);font-size:20px}
+.live-inputs .muted{font-size:12px}
+.steering-range{max-width:300px}
+.device-setup .axis-row{grid-template-columns:minmax(0,1fr) auto;gap:12px 16px;padding:20px 0}
+.axis-heading{grid-column:1;min-width:0}
+.axis-heading h3{margin:0 0 8px;font-size:16px}
+.axis-heading p{margin:4px 0;font-size:14px;overflow-wrap:anywhere}
+.axis-heading .binding-kind{color:var(--text-muted);margin-right:8px}
+.axis-heading .pending-binding{color:var(--warning)}
+.axis-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.device-setup .axis-row .lx-button{min-height:44px;padding:8px 12px}
+.device-setup .axis-row .axis-meter{grid-column:1/-1;height:16px;margin:0}
+.axis-row.is-learning{border-color:var(--accent)}
+.axis-learning-note{grid-column:1/-1;margin:0;color:var(--text-muted);font-size:14px}
+.axis-sample{grid-column:1/-1;font-family:var(--font-mono);font-size:14px}
+.advanced-device>.lx-disclosure{width:100%;text-align:left}
+.advanced-device>.lx-disclosure+div{padding-top:16px}
+.device-save-bar{display:flex;align-items:center;gap:12px;padding:16px 24px;border-top:1px solid var(--border);background:var(--surface);min-width:0}
+.device-save-state{flex:1;min-width:0;overflow-wrap:anywhere}
+.device-save-state p{margin:0}
+.device-save-state .lx-status{border:0;background:none;padding:0;font-size:14px}
+.device-save-state .lx-status[data-tone=danger]{color:var(--danger)}
+.device-save-state .lx-status[data-tone=success]{color:var(--success)}
+.device-save-bar>.lx-button{flex:none;min-height:44px}
+@media(max-width:700px){
+ .device-heading{padding:16px 16px 8px}
+ .device-content{padding:12px 16px 16px}
+ .device-content .lx-surface{padding:16px}
+ .live-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .device-setup .axis-row{grid-template-columns:minmax(0,1fr)}
+ .axis-actions{justify-content:flex-start}
+ .device-save-bar{padding:12px 16px;flex-wrap:wrap}
+ .device-save-state{flex-basis:100%}
+ .device-save-bar>#save{margin-left:auto}
+}
+
+.device-setup.embedded-device .device-heading h1{display:none}
