@@ -32,12 +32,12 @@ try {
  foreach($name in @('Install-App.ps1','Uninstall-App.ps1')){Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination (Join-Path $stage ('tools\'+$name)) -Force}
  $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
  $sourceFile=Join-Path $root 'src\AppInstaller.cs';$uninstaller=Join-Path $work 'SimRacingUninstall.exe';$icon=Join-Path $stage 'assets\app.ico'
- $references=@('/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.IO.Compression.dll','/reference:System.IO.Compression.FileSystem.dll')
+ $references=@('/reference:System.Windows.Forms.dll','/reference:System.Drawing.dll','/reference:System.IO.Compression.dll','/reference:System.IO.Compression.FileSystem.dll','/reference:System.Web.Extensions.dll')
  & $csc /nologo /optimize+ /target:winexe /platform:anycpu /define:UNINSTALLER "/win32icon:$icon" "/out:$uninstaller" @references ('/resource:'+(Join-Path $PSScriptRoot 'Uninstall-App.ps1')+',UninstallScript') $sourceFile
  if($LASTEXITCODE -ne 0){throw 'Uninstaller compilation failed.'}
  $zip=Join-Path $work 'payload.zip';[IO.Compression.ZipFile]::CreateFromDirectory($stage,$zip,[IO.Compression.CompressionLevel]::Optimal,$false)
  New-Item -ItemType Directory -Force -Path (Split-Path $OutputPath)|Out-Null
- & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/win32icon:$icon" "/out:$OutputPath" @references "/resource:$zip,Payload" "/resource:$uninstaller,Uninstaller" ('/resource:'+(Join-Path $PSScriptRoot 'Uninstall-App.ps1')+',UninstallScript') $sourceFile
+ & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/win32icon:$icon" "/out:$OutputPath" @references "/resource:$zip,Payload" ('/resource:'+(Join-Path $stage 'VERSION')+',PackageVersion') "/resource:$uninstaller,Uninstaller" ('/resource:'+(Join-Path $PSScriptRoot 'Uninstall-App.ps1')+',UninstallScript') $sourceFile
  if($LASTEXITCODE -ne 0){throw 'Installer compilation failed.'}
  @{ok=$true;version=(Get-Content -LiteralPath (Join-Path $stage 'VERSION') -Raw).Trim();installer=$OutputPath}|ConvertTo-Json -Compress
 }finally{if(Test-Path -LiteralPath $work){Remove-Item -LiteralPath $work -Recurse -Force}}

@@ -4,7 +4,10 @@ using System.Drawing;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
-using System.Runtime.InteropServices;
+using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Threading;
+using System.Web.Script.Serialization;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -12,8 +15,56 @@ using System.Windows.Forms;
 // The same small native host builds Setup and the installed uninstaller.
 internal static class AppInstaller
 {
-    [DllImport("user32.dll")]
-    static extern bool ShowWindow(IntPtr window, int command);
+    static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
+    static string updateRoot, updateId, updateVersion;
+    static void UpdateState(string phase, string message)
+    {
+        if (updateRoot == null) return;
+        string folder = Path.Combine(updateRoot, "runtime", "updates");
+        Directory.CreateDirectory(folder);
+        string file = Path.Combine(folder, "install-state.json"), temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try {
+            File.WriteAllText(temporary, Json.Serialize(new { schema = 1, attemptId = updateId, version = updateVersion, phase = phase, message = message, updatedAt = DateTime.UtcNow.ToString("O") }), new UTF8Encoding(false));
+            if (File.Exists(file)) File.Replace(temporary, file, null); else File.Move(temporary, file);
+        } finally { if (File.Exists(temporary)) File.Delete(temporary); }
+    }
+    static bool InstalledAt(string root)
+    {
+        string full = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        if (!Directory.Exists(full) || (File.GetAttributes(full) & FileAttributes.ReparsePoint) != 0) return false;
+        string file = Path.Combine(full, "runtime", "installed-app.json");
+        if (!File.Exists(file)) return false;
+        Dictionary<string, object> identity = Json.Deserialize<Dictionary<string, object>>(File.ReadAllText(file, Encoding.UTF8));
+        object installed, recorded;
+        return identity.TryGetValue("installed", out installed) && installed is bool && (bool)installed && identity.TryGetValue("root", out recorded) && recorded is string && String.Equals(full, Path.GetFullPath((string)recorded).TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase);
+    }
+    static int Update(string root, string migration, string attempt)
+    {
+        // The native lifetime lock prevents repeated old-client clicks from
+        // starting another install or replacing the active attempt receipt.
+        string normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant();
+        string name;
+        using (SHA256 hash = SHA256.Create()) name = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(normalized))).Replace("-", "");
+        using (Mutex mutex = new Mutex(false, "Local\\SimRacingOverlay.Update." + name)) {
+            bool acquired;
+            try { acquired = mutex.WaitOne(0); } catch (AbandonedMutexException) { acquired = true; }
+            if (!acquired) return 2;
+            try {
+                if (!InstalledAt(root)) throw new InvalidOperationException("The update target is not this installed application.");
+                updateRoot = Path.GetFullPath(root); updateId = attempt;
+                using (Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PackageVersion"))
+                using (StreamReader reader = new StreamReader(stream)) updateVersion = reader.ReadToEnd().Trim();
+                UpdateState("preparing", "正在准备更新；完成后将自动重启。");
+                Execute(root, migration, false);
+                UpdateState("restarting", "文件已更新，正在重新启动应用…");
+                Restart(root);
+                return 0;
+            } catch (Exception error) {
+                UpdateState("error", "更新未完成：" + error.Message);
+                throw;
+            } finally { mutex.ReleaseMutex(); }
+        }
+    }
 
     static string Option(string[] args, string key, string fallback)
     {
@@ -79,6 +130,7 @@ internal static class AppInstaller
                 script = Path.Combine(payload, "tools", "Install-App.ps1");
                 arguments = " -Payload " + Quote(payload) + " -InstallPath " + Quote(root);
                 if (!String.IsNullOrWhiteSpace(migration)) arguments += " -MigrationSource " + Quote(migration);
+                if (updateId != null) arguments += " -UpdateAttemptId " + Quote(updateId) + " -UpdateVersion " + Quote(updateVersion);
 #endif
             }
             ProcessStartInfo start = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"));
@@ -123,6 +175,15 @@ internal static class AppInstaller
             string root = Option(args, "--root", defaultRoot);
             string migration = Option(args, "--migration-source", null);
             bool restart = !uninstall && Array.IndexOf(args, "--restart") >= 0;
+            // --root + --restart was the update entry in 1.6.0/1.6.1.
+            // A real installed identity is mandatory before interpreting it as
+            // a background in-place update; ordinary double-click stays a wizard.
+            if (!uninstall && restart && Array.IndexOf(args, "--root") >= 0) {
+                string attempt = Option(args, "--attempt-id", Guid.NewGuid().ToString("N"));
+                Guid parsed;
+                if (!Guid.TryParseExact(attempt, "N", out parsed)) throw new ArgumentException("Invalid update attempt identity.");
+                return Update(root, migration, attempt);
+            }
             if (Array.IndexOf(args, "--quiet") >= 0) { Execute(root, migration, uninstall); if (restart) Restart(root); return 0; }
             using (Form form = new Form()) {
                 form.Text = uninstall ? "卸载 SimRacingOverlay" : "安装 SimRacingOverlay";
@@ -159,15 +220,11 @@ internal static class AppInstaller
                     } finally { busy = false; close.Enabled = true; }
                 };
                 form.Controls.AddRange(new Control[] { intro, path, browse, status, action, close });
-                // Older update clients passed SW_HIDE in STARTUPINFO. The first
-                // WinForms show consumes that flag; explicitly show the requested
-                // interactive installer afterwards. Quiet installs never enter here.
-                form.Shown += delegate { ShowWindow(form.Handle, 1); form.Activate(); };
                 Application.Run(form);
                 return 0;
             }
         } catch (Exception error) {
-            if (Array.IndexOf(args, "--quiet") < 0) MessageBox.Show(error.Message, "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (Array.IndexOf(args, "--quiet") < 0 && !(Array.IndexOf(args, "--root") >= 0 && Array.IndexOf(args, "--restart") >= 0)) MessageBox.Show(error.Message, "SimRacingOverlay", MessageBoxButtons.OK, MessageBoxIcon.Error);
             else { try { Console.Error.WriteLine(error.ToString()); } catch (IOException) { } catch (InvalidOperationException) { } }
             return 1;
         }
