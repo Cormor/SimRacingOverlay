@@ -39,7 +39,7 @@
      if(style==='framed'){native.fillStyle=tokens.surface||'#191b1d';native.beginPath();native.roundRect(x-8,y-8,w+16,h+16,10);native.fill();}
      paintBase(id==='wheel'?native:context(native,tokens));
      if(style==='labelled'){
-      const label=pedal?signalLabels[semantic.signal]||'— 无响应证据':semantic.summary||'— 无当前数据';
+      const label=pedal?signalLabels[semantic.signal]||'— 暂无响应提示':semantic.summary||'— 暂无数据';
       if(label){native.font='600 '+(w<150?15:17)+'px "Microsoft YaHei UI",sans-serif';native.textAlign='center';native.textBaseline='middle';const labelWidth=Math.min(w+32,native.measureText(label).width+16);native.fillStyle=tokens.surface||'#191b1d';native.fillRect(x+w/2-labelWidth/2,y+h+8,labelWidth,24);native.fillStyle=tokens.text||'#f4f1e8';native.fillText(label,x+w/2,y+h+20);}
      }
      if(style==='framed'){native.strokeStyle=tokens.boundary||'#a6b6c8';native.lineWidth=2;native.strokeRect(x-8,y-8,w+16,h+16);}

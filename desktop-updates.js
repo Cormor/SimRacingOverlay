@@ -81,11 +81,11 @@ function readActive(root,base){
  try{const file=plain(path.join(root,'assets/modules/active.json'));const a=JSON.parse(fs.readFileSync(file,'utf8'));version(a.version);if(a.baseVersion!==base||!/^\w{64}$/.test(a.generation)||!/^[a-f0-9]{64}$/.test(a.generation)||!['official','local'].includes(a.source))return null;return a;}catch{return null;}
 }
 function checkedHotfix(input,base){
- if(!input||input.schema!==1||input.kind!=='simracingoverlay-hotfix')throw Error('请选择 SimRacingOverlay 算法 hotfix JSON 包或盘面 JSON');
+ if(!input||input.schema!==1||input.kind!=='simracingoverlay-hotfix')throw Error('请选择 SimRacingOverlay 算法、组件或盘面 JSON 包');
  version(input.version);if(input.baseVersion!==base)throw Error('此算法包适用于 '+input.baseVersion+'；当前完整版本为 '+base+'，请先安装匹配的完整版本');
- if(!input.files||Array.isArray(input.files)||typeof input.files!=='object')throw Error('算法包缺少 files');
+ if(!input.files||Array.isArray(input.files)||typeof input.files!=='object')throw Error('算法包缺少文件清单');
  const files=Object.keys(input.files);if(!files.length||files.length>ALGORITHMS.length)throw Error('算法模块数量无效');
- for(const name of files){if(!ALGORITHMS.includes(name))throw Error('此文件需要完整更新，不能 hotfix：'+name);const code=input.files[name];if(typeof code!=='string'||Buffer.byteLength(code)>2*1024*1024)throw Error('算法模块内容或大小无效：'+name);try{new vm.Script(code,{filename:name});}catch(error){throw Error('算法语法无效：'+name+'：'+error.message);}}
+ for(const name of files){if(!ALGORITHMS.includes(name))throw Error('此文件需要完整更新，无法热更新：'+name);const code=input.files[name];if(typeof code!=='string'||Buffer.byteLength(code)>2*1024*1024)throw Error('算法模块内容或大小无效：'+name);try{new vm.Script(code,{filename:name});}catch(error){throw Error('算法语法无效：'+name+'：'+error.message);}}
  return {schema:1,kind:input.kind,version:input.version,baseVersion:base,files:Object.fromEntries(files.map(n=>[n,input.files[n]]))};
 }
 function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>true,applyModules=async()=>{},installSetup=async()=>{throw Error('安装入口不可用');}}={}){
@@ -117,7 +117,7 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
   if(value.phase==='error'){stopInstallWatch();installAttempt=null;publish({phase:'error',installation:installState(value),error:value.message,message:value.message});}
   else publish({phase:'installing',installation:installState(value),error:null,message:value.message});
  }
- async function run(fn){if(disposed)return {ok:false,error:'更新服务已退出',state:snapshot()};if(operation||installAttempt)return {ok:false,error:'另一项更新操作正在进行',state:snapshot()};const promise=(async()=>{try{await fn();return {ok:true,state:snapshot()};}catch(error){publish({phase:'error',error:error.message,message:error.message});return {ok:false,error:error.message,state:snapshot()};}})();operation=promise;try{return await promise;}finally{if(operation===promise)operation=null;}}
+ async function run(fn){if(disposed)return {ok:false,error:'更新服务已退出',state:snapshot()};if(operation||installAttempt)return {ok:false,error:'另一项更新操作正在进行',state:snapshot()};const promise=(async()=>{try{publish({result:null});await fn();return {ok:true,state:snapshot()};}catch(error){publish({phase:'error',error:error.message,message:error.message});return {ok:false,error:error.message,state:snapshot()};}})();operation=promise;try{return await promise;}finally{if(operation===promise)operation=null;}}
  function asset(name){const a=releaseData?.assets?.find(a=>a.name===name);if(!a||typeof a.browser_download_url!=='string')throw Error('Release 缺少资产：'+name);const u=allowedUrl(a.browser_download_url,true);const prefix='/'+REPO+'/releases/download/'+encodeURIComponent(releaseData.tag_name)+'/';if(!u.pathname.startsWith(prefix)||decodeURIComponent(u.pathname.slice(prefix.length))!==name)throw Error('更新资产不属于当前 Release');if(!Number.isSafeInteger(a.id)||a.id<=0)throw Error('Release 资产编号无效：'+name);return {...a,downloadUrl:ASSET_API+a.id};}
  function entry(value,kind){if(!value)return null;if(typeof value.name!=='string'||value.name!==path.basename(value.name)||!/^[a-f0-9]{64}$/i.test(value.sha256))throw Error('更新清单校验信息无效');if(kind==='hotfix'&&value.kind!==undefined&&!['algorithm','wheel','components'].includes(value.kind))throw Error('不支持此热更新类型');if(value.kind==='components')version(value.moduleVersion);if(kind==='setup'&&!/^SimRacingOverlay-\d+\.\d+\.\d+-Setup\.exe$/.test(value.name))throw Error('完整更新必须为正式 Setup');asset(value.name);return {name:value.name,sha256:value.sha256.toLowerCase(),kind:['wheel','components'].includes(value.kind)?value.kind:'algorithm',moduleVersion:value.moduleVersion};}
  async function check(force=false){if(!force&&lastCheck&&Date.now()-lastCheck<60000)return {ok:true,state:snapshot()};return run(async()=>{
@@ -133,8 +133,8 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
   publish({release,phase:isNew?'available':'current',canSetup:!!manifest?.setup&&compare(v,base)>0,canHotfix:!!compatible&&isNew,message:isNew?(manifest?.setup||compatible?'发现新版本 '+v:'发现新版本 '+v+'；此 Release 未提供受校验更新清单，请打开发布页安装'):'当前版本无需更新',error:null});
  });}
  async function download(kind='setup'){return run(async()=>{
-  if(!['setup','hotfix'].includes(kind))throw Error('未知更新类型');const spec=manifest?.[kind];if(!spec)throw Error('此 Release 未提供可直接安装的'+(kind==='setup'?'完整更新':'hotfix'));
-  if(kind==='hotfix'&&!['wheel','components'].includes(manifest.hotfix.kind)&&manifest.baseVersion!==base)throw Error('此 hotfix 与当前完整版本不兼容');
+  if(!['setup','hotfix'].includes(kind))throw Error('未知更新类型');const spec=manifest?.[kind];if(!spec)throw Error('此版本未提供可直接安装的'+(kind==='setup'?'完整更新':'热更新'));
+  if(kind==='hotfix'&&!['wheel','components'].includes(manifest.hotfix.kind)&&manifest.baseVersion!==base)throw Error('此热更新与当前完整版本不兼容');
   publish({phase:'downloading',pending:null,receivedBytes:0,totalBytes:null,error:null,message:'正在下载'+(kind==='setup'?'完整更新':'热更新')+'…'});pending=null;
   const a=asset(spec.name);
   if(kind==='setup'){
@@ -142,7 +142,7 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
    const data=await fetchAsset(a.downloadUrl,{request,limit:SETUP_LIMIT,file:temp,progress:(received,total)=>publish({receivedBytes:received,totalBytes:total})});
    if(data.sha256!==spec.sha256){fs.unlinkSync(temp);throw Error('完整更新校验失败，请重新下载');}
    if(disposed){fs.unlinkSync(temp);return;}const file=plain(path.join(downloadDir,spec.name));fs.renameSync(temp,file);setup={file,sha256:spec.sha256,version:state.release.version};publish({phase:'ready',pending:{kind:'setup',source:'official',version:state.release.version,files:[spec.name],name:'完整更新 '+state.release.version,executable:true},message:'完整更新已下载；安装前会保存编辑并退出，完整升级后恢复内置算法。',error:null});
-  }else{const data=await fetchAsset(a.downloadUrl,{request});if(data.sha256!==spec.sha256)throw Error('hotfix 校验失败，请重新下载');if(disposed)return;const payload=parse(data.bytes);if(manifest.hotfix.kind==='wheel'){setPending(validateWheel(payload),'official');}else if(manifest.hotfix.kind==='components'){const pack=componentHost.inspectPackage(payload);if(pack.version!==manifest.hotfix.moduleVersion)throw Error('组件包版本与更新清单不一致');setPending(pack,'official');}else{const pack=checkedHotfix(payload,base);if(pack.version!==state.release.version||pack.baseVersion!==manifest.baseVersion)throw Error('hotfix 包与 Release 版本不一致');setPending(pack,'official');}}
+  }else{const data=await fetchAsset(a.downloadUrl,{request});if(data.sha256!==spec.sha256)throw Error('热更新校验失败，请重新下载');if(disposed)return;const payload=parse(data.bytes);if(manifest.hotfix.kind==='wheel'){setPending(validateWheel(payload),'official');}else if(manifest.hotfix.kind==='components'){const pack=componentHost.inspectPackage(payload);if(pack.version!==manifest.hotfix.moduleVersion)throw Error('组件包版本与更新清单不一致');setPending(pack,'official');}else{const pack=checkedHotfix(payload,base);if(pack.version!==state.release.version||pack.baseVersion!==manifest.baseVersion)throw Error('热更新包与发布版本不一致');setPending(pack,'official');}}
  });}
  function setPending(data,source){
   pending={data,source};const component=data.kind==='simracingoverlay-components',wheel=!component&&data.kind!=='simracingoverlay-hotfix';
@@ -152,7 +152,7 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
 
  async function inspectLocal(file){return run(async()=>{pending=null;publish({pending:null,error:null});if(typeof file!=='string'||!path.isAbsolute(file)||path.extname(file).toLowerCase()!=='.json')throw Error('请选择本地 JSON 文件');plain(file);const stat=fs.statSync(file);if(!stat.isFile()||stat.size>JSON_LIMIT)throw Error('本地包必须为不超过 12 MiB 的 JSON 文件');const data=parse(fs.readFileSync(file));if(data.kind==='simracingoverlay-components')setPending(componentHost.inspectPackage(data),'local');else if(data.kind==='simracingoverlay-hotfix')setPending(checkedHotfix(data,base),'local');else setPending(validateWheel(data),'local');});}
  async function applyPending(){return run(async()=>{
-  const selected=pending;if(!selected)throw Error('请先下载 hotfix 或选择本地包');publish({phase:'applying',error:null,message:'正在保存编辑并应用…'});
+  const selected=pending;if(!selected)throw Error('请先下载热更新或导入本地包');publish({phase:'applying',error:null,message:'正在保存编辑并应用…'});
   if(await beforeApply()!==true)throw Error('当前编辑尚未保存；完成编辑后重试');if(disposed)return;
   const {data,source}=selected;let componentPrevious=null,componentActivation=null;
   if(data.kind==='simracingoverlay-components'){
@@ -169,7 +169,7 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
    atomic(path.join(directory,'active.json'),JSON.stringify({schema:1,baseVersion:base,version:data.version,source,generation,files:Object.keys(data.files)},null,2)+'\n');
   }
   pending=null;publish({phase:'ready',pending:null,message:'模块已安装，正在刷新叠加层…'});
-  try{await applyModules(componentActivation?.revision);publish({phase:'idle',available:state.release?compare(state.release.version,snapshot().officialVersion)>0:false,message:componentActivation?'组件包已应用，可在组件设置中选择新增定义。':data.kind==='simracingoverlay-hotfix'?'算法模块已应用。':'盘面已应用，可在盘面设置中选择。',error:null});}catch(error){
+  try{await applyModules(componentActivation?.revision);publish({phase:'idle',result:componentActivation?'components-applied':data.kind==='simracingoverlay-hotfix'?'algorithms-applied':'wheel-applied',available:state.release?compare(state.release.version,snapshot().officialVersion)>0:false,message:componentActivation?'组件包已应用，可在组件设置中选择新增定义。':data.kind==='simracingoverlay-hotfix'?'算法模块已应用。':'盘面已应用，可在盘面设置中选择。',error:null});}catch(error){
    if(componentActivation){
     try{componentHost.restoreSnapshot(root,componentPrevious,componentActivation.revision);await applyModules(componentPrevious.revision);}catch(restoreError){throw Error('组件包未通过运行加载：'+error.message+'；恢复原组合未完成：'+restoreError.message);}
     throw Error('组件包未通过运行加载，已恢复原组合：'+error.message);
@@ -177,7 +177,7 @@ function createUpdateService({root,request,onState=()=>{},beforeApply=async()=>t
    throw Error('模块已安装，刷新未完成：'+error.message+'。请重新打开叠加层。');
   }
  });}
- async function clearModules(){return run(async()=>{publish({phase:'applying',error:null});if(await beforeApply()!==true)throw Error('当前编辑尚未保存；完成编辑后重试');if(disposed)return;const baseline=componentHost.restoreBaseline(root);const file=plain(path.join(directory,'active.json'));if(fs.existsSync(file))fs.unlinkSync(file);await applyModules(baseline.revision);publish({phase:'idle',message:'已恢复当前完整版本内置算法与组件；本地包文件保留。',error:null,available:state.release?compare(state.release.version,base)>0:false});});}
+ async function clearModules(){return run(async()=>{publish({phase:'applying',error:null});if(await beforeApply()!==true)throw Error('当前编辑尚未保存；完成编辑后重试');if(disposed)return;const baseline=componentHost.restoreBaseline(root);const file=plain(path.join(directory,'active.json'));if(fs.existsSync(file))fs.unlinkSync(file);await applyModules(baseline.revision);publish({phase:'idle',result:'defaults-restored',message:'已恢复默认算法与组件，本地包文件保留。',error:null,available:state.release?compare(state.release.version,base)>0:false});});}
  async function install(){return run(async()=>{
   if(!setup)throw Error('请先下载完整更新');if(await beforeApply()!==true)throw Error('当前编辑尚未保存；完成编辑后重试');if(disposed)return;
   plain(setup.file);if(fileDigest(setup.file)!==setup.sha256)throw Error('安装文件已变化，请重新下载');

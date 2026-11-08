@@ -57,7 +57,7 @@ function createDesktopTray({Tray,nativeImage,tooltipSuffix='Ctrl+Alt+M 编辑',o
   let closed=false,report=null,lastMessageAt=-Infinity,lastAdvanceAt=-Infinity,lastEpoch=null,lastSequence=-1;
   const retiredEpochs=new Set();
   let updateAvailable=false;
-  let shown=null,lastTooltip='',waitingReason='等待本机状态';
+  let shown=null,lastTooltip='',waitingReason='等待设备状态';
   let publicStatus={connected:false,reason:waitingReason,iconEmpty:false};
   function healthy(now=performance.now()) {
     return !!report&&!report.error&&now-lastMessageAt<=STALE_MS&&now-lastAdvanceAt<=STALE_MS;
@@ -73,8 +73,8 @@ function createDesktopTray({Tray,nativeImage,tooltipSuffix='Ctrl+Alt+M 编辑',o
   function present() {
     if(closed)return;
     if(!report){show(false,waitingReason);return;}
-    if(report.error){show(false,'本机输入状态异常');return;}
-    if(!healthy()){show(false,'本机状态已中断');return;}
+    if(report.error){show(false,'设备输入异常');return;}
+    if(!healthy()){show(false,'设备状态暂不可用');return;}
     // Explicit, valid steering bindings establish a role. Otherwise only native
     // device metadata (including the confirmed R25 exception) establishes it.
     const wheel=report.devices.find(d=>d.id===report.steeringId)||report.devices.find(d=>
@@ -82,15 +82,15 @@ function createDesktopTray({Tray,nativeImage,tooltipSuffix='Ctrl+Alt+M 编辑',o
     if(wheel){const name=wheel.name||'方向盘';show(true,'方向盘已连接 · '+name,name);return;}
     show(false,'未检测到方向盘');
   }
-  function invalidate(reason='等待本机状态') {
+  function invalidate(reason='等待设备状态') {
     if(closed)return;
     report=null;lastMessageAt=-Infinity;lastAdvanceAt=-Infinity;lastEpoch=null;lastSequence=-1;retiredEpochs.clear();
-    waitingReason=safeName(reason)||'等待本机状态';present();
+    waitingReason=safeName(reason)||'等待设备状态';present();
   }
   function acceptState(value) {
     if(closed)return;
     const next=snapshot(value);
-    if(!next){report=null;waitingReason='本机输入信息不完整';present();return;}
+    if(!next){report=null;waitingReason='设备信息暂不可用';present();return;}
     if(retiredEpochs.has(next.epoch))return;
     if(next.epoch===lastEpoch&&next.sequence<lastSequence)return;
     const now=performance.now();

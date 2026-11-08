@@ -150,12 +150,19 @@ class Launcher {
    if(sceneWatcher!=null)sceneWatcher.Dispose();foreach(var watcher in files)watcher.Dispose();foreach(var watcher in hosts)watcher.Dispose();
   }
  }
+ static string StartFailureMessage(string detail) {
+  if(detail.IndexOf("Port ",StringComparison.OrdinalIgnoreCase)>=0&&detail.IndexOf("another process",StringComparison.OrdinalIgnoreCase)>=0)return "本程序使用的端口已被其他程序占用。请关闭占用端口的程序后重试。";
+  if(detail.IndexOf("update has not finished",StringComparison.OrdinalIgnoreCase)>=0)return "更新尚未完成，请等待安装结束后再打开。";
+  if(detail.IndexOf("still in progress",StringComparison.OrdinalIgnoreCase)>=0)return "程序正在启动、退出或更新，请稍候再试。";
+  if(detail.IndexOf("kept the current edit open",StringComparison.OrdinalIgnoreCase)>=0)return "当前编辑尚未关闭。请回到管理窗口保存并完成编辑后重试。";
+  return "程序未能启动，请重试；仍无法打开时，请重新安装最新版本。错误详情已保存在安装目录的 runtime/launcher-state.json。";
+ }
  [STAThread]static int Main(string[] args) {
   try {
    root=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".."));bool watch=false;
    for(int i=0;i<args.Length;i++){if(args[i]=="--watch")watch=true;else if(args[i]=="--root"&&i+1<args.Length)root=args[++i];else throw new ArgumentException("Unknown launcher argument: "+args[i]);}
    root=OverlayLifecyclePaths.Canonical(root);
-   if(!watch){using(var command=new Command("Start-Overlay.ps1","-OpenManager")){command.Process.WaitForExit();if(command.Process.ExitCode!=0){Status("start-failed",command.Output);System.Windows.Forms.MessageBox.Show(command.Output,"SimRacingOverlay did not start");}return command.Process.ExitCode;}}
+   if(!watch){using(var command=new Command("Start-Overlay.ps1","-OpenManager")){command.Process.WaitForExit();if(command.Process.ExitCode!=0){Status("start-failed",command.Output);System.Windows.Forms.MessageBox.Show(StartFailureMessage(command.Output),"无法启动 SimRacingOverlay",System.Windows.Forms.MessageBoxButtons.OK,System.Windows.Forms.MessageBoxIcon.Error);}return command.Process.ExitCode;}}
    string identity;using(var sha=SHA256.Create())identity=BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(root.ToLowerInvariant()))).Replace("-","");
    bool first;using(var mutex=new Mutex(true,"Local\\SimRacingOverlay.StartupWatcher."+identity,out first)){if(!first)return 0;RunWatcher();}
    return 0;
