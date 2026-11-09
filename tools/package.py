@@ -21,8 +21,8 @@ for folder in ('src','assets','defaults','tools','tests','docs','licenses','desi
 source=sorted(set(p for p in source if '__pycache__' not in p.parts and p.suffix!='.pyc' and 'wheel-packs' not in p.relative_to(ROOT).parts and 'modules' not in p.relative_to(ROOT).parts and 'components' not in p.relative_to(ROOT).parts and p.relative_to(ROOT).as_posix() not in local_documents))
 # Rebuilt native files must be bound to the exact source in this package.
 receipt=json.loads((ROOT/'runtime/native-build.json').read_text(encoding='utf-8-sig'))
-required_sources={'src/SimHubPlugin.cs','src/led_tap.py','src/led_decoder.py','src/led-tap.js'}
-required_binaries={'runtime/SimRacingOverlay.SimHub.dll','runtime/MozaLedObserver.exe'}
+required_sources={'src/HudWindowLayer.cs','src/SimHubPlugin.cs','src/led_tap.py','src/led_decoder.py','src/led-tap.js'}
+required_binaries={'runtime/SimRacingHudLayer.exe','runtime/SimRacingOverlay.SimHub.dll','runtime/MozaLedObserver.exe'}
 if not required_sources.issubset(receipt['sources']) or not required_binaries.issubset(receipt['binaries']):
  raise RuntimeError('A complete release requires build.ps1 -SimHubPath <SDK> -BuildObserver before packaging.')
 for group in ('sources','binaries'):
@@ -31,7 +31,7 @@ for group in ('sources','binaries'):
 for p in source:
  inspect_file(p);rel=p.relative_to(ROOT)
  for target in (stage/rel,stage/'source'/rel):target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(p,target)
-for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll','native-build.json'):
+for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','SimRacingHudLayer.exe','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll','native-build.json'):
  p=ROOT/'runtime'/name
  inspect_file(p);target=stage/'runtime'/name;target.parent.mkdir(exist_ok=True);shutil.copyfile(p,target)
 shutil.copytree(ROOT/'runtime/electron',stage/'runtime/electron')
