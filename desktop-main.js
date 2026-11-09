@@ -28,11 +28,17 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  let observedLayout=null,obsStage=null,obsRevision=0,obsStateText=null,obsStateRetry=null;
  const obsStateFile=path.join(root,'runtime','obs-state.json'),pendingPackIds=new Set();
  let desktopSettings={visible:false,width:600,x:-1,y:-1,monitor:0,page:1};
- let reference={active:false,paused:false,mode:'ghost'},hudNavigating=true;
- const DEFAULT_LAYOUT_SHORTCUT='Control+Alt+M';
- let layoutShortcut=DEFAULT_LAYOUT_SHORTCUT,layoutShortcutError=null,shortcutReady=false,shortcutRecording=false;
+ let reference={active:false,paused:false,mode:'ghost'},referenceSuppressed=false,hudNavigating=true;
+ const shortcuts={
+  layout:{field:'layoutShortcut',label:'编辑布局',defaultKey:'Control+Alt+M',action:layoutShortcutAction},
+  visibility:{field:'visibilityShortcut',label:'显示 / 隐藏桌面叠加',defaultKey:'Control+Alt+V',action:toggleOverlayVisibility},
+  resetGPeak:{field:'resetGPeakShortcut',label:'重置本段 G 峰值',defaultKey:'Control+Alt+G',action:resetGPeak}
+ };
+ const shortcutBindings=Object.values(shortcuts);
+ let shortcutReady=false,shortcutRecording=false;
  let sceneInputCaptured=false,referenceInteracting=false,quitProcess=null,allowHudClose=false;
  let directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null},directSaved=null,directRegions=[],directLayoutKey='';
+ let lastHudShape='',directHudRaised=false,restoreManagerMaximized=false;
  let referenceGestureActive=false,sceneDragging=false,minimizingManager=null;
  let applying=false,applyAgain=false,directChanging=false,lastManagerState='',lastHostState='',lastReferenceState='';
  let persistTimer=null,lastPersistAt=-Infinity,pendingStatusText=null;
@@ -45,54 +51,109 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   if(sceneDiagnostics.events.length>64)sceneDiagnostics.events.shift();
  }
 
- function normalizeLayoutShortcut(value){
+ function normalizeShortcut(value){
   if(typeof value!=='string'||value.length>100)throw Error('请输入有效的组合键');
   const parts=value.split('+').map(part=>part.trim());
   if(parts.length<2||parts.some(part=>!part))throw Error('组合键需要修饰键和一个按键');
   const aliases={control:'Control',ctrl:'Control',commandorcontrol:'Control',cmdorctrl:'Control',alt:'Alt',option:'Alt',shift:'Shift',super:'Super',meta:'Super',command:'Super',cmd:'Super'};
   const modifiers=new Set();let key=null;
   const named={space:'Space',tab:'Tab',escape:'Escape',esc:'Escape',enter:'Enter',return:'Enter',backspace:'Backspace',delete:'Delete',insert:'Insert',home:'Home',end:'End',pageup:'PageUp',pagedown:'PageDown',up:'Up',down:'Down',left:'Left',right:'Right',plus:'Plus',minus:'-',equal:'=',comma:',',period:'.',slash:'/',semicolon:';',quote:"'",backslash:'\\',bracketleft:'[',bracketright:']','-':'-','=':'=',',':',','.':'.','/':'/',';':';',"'":"'",'\\':'\\','[':'[',']':']'};
-  for(const part of parts){const lower=part.toLowerCase(),modifier=aliases[lower];
+  for(const part of parts){const lower=part.toLowerCase(),modifier=Object.hasOwn(aliases,lower)?aliases[lower]:null;
    if(modifier){if(modifiers.has(modifier))throw Error('修饰键不能重复');modifiers.add(modifier);continue;}
    if(key)throw Error('组合键只能包含一个普通按键');
-   key=/^[a-z0-9]$/i.test(part)?part.toUpperCase():/^f(?:[1-9]|1[0-9]|2[0-4])$/i.test(part)?part.toUpperCase():named[lower];
+   key=/^[a-z0-9]$/i.test(part)?part.toUpperCase():/^f(?:[1-9]|1[0-9]|2[0-4])$/i.test(part)?part.toUpperCase():Object.hasOwn(named,lower)?named[lower]:null;
    if(!key)throw Error('不支持这个按键，请使用字母、数字、F1–F24或常用控制键');
   }
   if(!key||!modifiers.size)throw Error('组合键需要修饰键和一个按键');
   return ['Control','Alt','Shift','Super'].filter(part=>modifiers.has(part)).concat(key).join('+');
  }
- function shortcutState(){return {ok:shortcutReady&&(shortcutRecording||globalShortcut.isRegistered(layoutShortcut)),accelerator:layoutShortcut,error:layoutShortcutError,recording:shortcutRecording};}
- function shortcutLabel(){return layoutShortcut.replace(/Control/g,'Ctrl');}
- function layoutShortcutAction(){if(quitting||closeBusy||closingManager||shortcutRecording)return;if(manager&&!manager.isDestroyed()&&reference.active&&!manager.isMinimized())manager.webContents.executeJavaScript('window.OverlayManager?.finishEditing()').catch(reportError);else void openManager('layout');}
- function registerLayoutShortcut(value,persist=true){
-  let next;try{next=normalizeLayoutShortcut(value);}catch(error){return {ok:false,accelerator:layoutShortcut,error:error.message};}
-  // The current registration belongs to us, so setting it again is a success.
-  if(next===layoutShortcut&&globalShortcut.isRegistered(next))return {ok:true,accelerator:layoutShortcut,error:null};
-  let registered=false;
-  try{registered=globalShortcut.register(next,layoutShortcutAction);}catch{}
-  if(!registered)return {ok:false,accelerator:layoutShortcut,error:'该组合键已被占用或系统不允许注册，请换一个组合键'};
-  const previous=layoutShortcut;
-  try{
-   if(persist){const updated={...desktopSettings,layoutShortcut:next};fs.writeFileSync(config+'.tmp',JSON.stringify(updated,null,2));fs.renameSync(config+'.tmp',config);desktopSettings=updated;}
-  }catch(error){globalShortcut.unregister(next);return {ok:false,accelerator:previous,error:'快捷键保存失败：'+error.message};}
-  layoutShortcut=next;layoutShortcutError=null;shortcutReady=true;shortcutRecording=false;
-  if(previous!==next)globalShortcut.unregister(previous);
-  refreshTrayMenu();publish();persistStatus();
-  return {ok:true,accelerator:layoutShortcut,error:null};
+ function shortcutState(binding=shortcuts.layout){return {ok:binding.registered===true,accelerator:binding.accelerator||binding.defaultKey,error:binding.error||null};}
+ function shortcutsState(){return {ok:true,shortcuts:Object.fromEntries(Object.entries(shortcuts).map(([id,binding])=>[id,shortcutState(binding)])),recording:shortcutRecording};}
+ function legacyShortcutState(){return {...shortcutState(),recording:shortcutRecording};}
+ function shortcutLabel(binding=shortcuts.layout){return shortcutState(binding).accelerator.replace(/Control/g,'Ctrl');}
+ function shortcutKey(accelerator){
+  // Electron expands Plus to the shifted '=' key.
+  if(!accelerator.endsWith('+Plus'))return accelerator;
+  return normalizeShortcut(accelerator.split('+').filter(part=>part!=='Shift'&&part!=='Plus').concat('Shift','=').join('+'));
  }
- function setLayoutShortcutRecording(active){
-  if(active===shortcutRecording)return shortcutState();
+ function layoutShortcutAction(){if(manager&&!manager.isDestroyed()&&reference.active&&!manager.isMinimized())manager.webContents.executeJavaScript('window.OverlayManager?.finishEditing()').catch(reportError);else void openManager('layout');}
+ function registerNativeShortcut(binding,accelerator){
+  try{
+   return globalShortcut.register(accelerator,()=>{
+    if(!quitting&&!closeBusy&&!closingManager&&!shortcutRecording&&shortcutKey(binding.accelerator)===shortcutKey(accelerator))binding.action();
+   });
+  }catch{return false;}
+ }
+ const shortcutUnavailable='该组合键已被占用或系统不允许注册，请换一个组合键';
+ const shortcutConflict=binding=>'该组合键已用于「'+binding.label+'」，请换一个组合键';
+ function shortcutUnsupported(accelerator){
+  // Chromium's Windows global listener omits MOD_WIN when registering a key.
+  return process.platform==='win32'&&accelerator.split('+').includes('Super')?'全局快捷键不支持 Windows 键，请使用 Ctrl、Alt 或 Shift':null;
+ }
+ function restoreShortcuts(){
+  const assigned=new Map();
+  for(const binding of shortcutBindings){
+   const unsupported=shortcutUnsupported(binding.accelerator);
+   if(unsupported){binding.error=unsupported;continue;}
+   const key=shortcutKey(binding.accelerator),conflict=assigned.get(key);
+   if(conflict){binding.error=shortcutConflict(conflict);continue;}
+   assigned.set(key,binding);
+   if(!binding.registered)binding.registered=registerNativeShortcut(binding,binding.accelerator);
+   binding.error=binding.registered?null:shortcutUnavailable;
+  }
+ }
+ function replaceShortcuts(changes,save){
+  const registered=[];
+  try{
+   for(const [binding,accelerator] of changes){
+    const unsupported=shortcutUnsupported(accelerator);
+    if(unsupported)throw Error(unsupported);
+    const key=shortcutKey(accelerator);
+    if(binding.registered&&shortcutKey(binding.accelerator)===key)continue;
+    const conflict=shortcutBindings.find(other=>other!==binding&&shortcutKey(other.accelerator)===key);
+    const pending=registered.find(([,pendingKey])=>shortcutKey(pendingKey)===key);
+    if(conflict||pending)throw Error(shortcutConflict(conflict||pending[0]));
+    if(!registerNativeShortcut(binding,accelerator))throw Error(shortcutUnavailable);
+    registered.push([binding,accelerator]);
+   }
+   save?.();
+  }catch(error){
+   for(const [,accelerator] of registered)globalShortcut.unregister(accelerator);
+   throw error;
+  }
+  for(const [binding,accelerator] of changes){
+   const previous=binding.accelerator;
+   if(binding.registered&&shortcutKey(previous)!==shortcutKey(accelerator))globalShortcut.unregister(previous);
+   binding.accelerator=accelerator;binding.registered=true;binding.error=null;
+  }
+  restoreShortcuts();
+ }
+ function setShortcut(id,value){
+  const binding=typeof id==='string'&&Object.hasOwn(shortcuts,id)?shortcuts[id]:null;
+  if(!binding)return {ok:false,error:'未知快捷键操作'};
+  try{
+   const accelerator=normalizeShortcut(value);
+   if(shortcutRecording)setShortcutRecording(false);
+   replaceShortcuts([[binding,accelerator]],()=>{
+    try{storeSettings({...settings(),[binding.field]:accelerator});}
+    catch(error){throw Error('快捷键保存失败：'+error.message);}
+   });
+   refreshTrayMenu();publish();persistStatus();
+   return shortcutState(binding);
+  }catch(error){return {...shortcutState(binding),ok:false,error:error.message};}
+ }
+ function setShortcutRecording(active){
+  if(active===shortcutRecording)return shortcutsState();
   if(active){
-   if(!manager||manager.isDestroyed()||!manager.isFocused()||manager.isMinimized()||closeBusy||closingManager||quitting)return {ok:false,accelerator:layoutShortcut,error:'管理窗口当前无法录入快捷键'};
-   globalShortcut.unregister(layoutShortcut);shortcutRecording=true;layoutShortcutError=null;
+   if(!manager||manager.isDestroyed()||!manager.isFocused()||manager.isMinimized()||closeBusy||closingManager||quitting)return {...shortcutsState(),ok:false,error:'管理窗口当前无法录入快捷键'};
+   shortcutRecording=true;
+   for(const binding of shortcutBindings)if(binding.registered)globalShortcut.unregister(binding.accelerator);
   }else{
    shortcutRecording=false;
-   if(!globalShortcut.isRegistered(layoutShortcut)){
-    let restored=false;try{restored=globalShortcut.register(layoutShortcut,layoutShortcutAction);}catch{}
-    layoutShortcutError=restored?null:'原快捷键恢复失败，该组合键已被占用或系统不允许注册';
-   }
+   for(const binding of shortcutBindings)binding.registered=false;
+   restoreShortcuts();
   }
-  refreshTrayMenu();publish();return shortcutState();
+  refreshTrayMenu();publish();persistStatus();return shortcutsState();
  }
  function requestOverlayQuit(){
   if(quitting||closeBusy||closingManager||quitProcess)return;
@@ -122,13 +183,23 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    {label:'编辑布局 ('+shortcutLabel()+')',click:()=>openManager('layout')},
    {label:'盘面与设备输入',click:()=>openManager('inputs')},
    {label:'版本与更新'+(updateService?.snapshot().available?' · 有可用更新':''),click:()=>openManager('updates')},
-   {label:'显示 / 隐藏桌面叠加',click:()=>writeSettings({visible:!settings().visible})},
-   {label:'重置本段 G 峰值',click:()=>{if(win&&!win.isDestroyed()&&!hudNavigating)win.webContents.executeJavaScript('window.OverlayUIHost?.resetGPeak()').catch(reportError);}},
+   {label:shortcuts.visibility.label+(shortcutState(shortcuts.visibility).ok?' ('+shortcutLabel(shortcuts.visibility)+')':''),click:toggleOverlayVisibility},
+   {label:shortcuts.resetGPeak.label+(shortcutState(shortcuts.resetGPeak).ok?' ('+shortcutLabel(shortcuts.resetGPeak)+')':''),click:resetGPeak},
    {type:'separator'},
    {label:'退出叠加程序',click:requestOverlayQuit}
   ]));
  }
- function directRequested(){return !quitting&&!hudNavigating&&!closingManager&&!!manager&&!manager.isDestroyed()&&!manager.isMinimized()&&reference.active&&!reference.paused&&reference.mode==='normal';}
+ function toggleOverlayVisibility(){
+  if(quitting||closeBusy||closingManager)return;
+  try{storeSettings({...settings(),visible:!hudPresentation().visible});}
+  catch(error){reportError(error);return;}
+  // A manual toggle takes precedence over the temporary reference until
+  // the user selects a reference mode again or leaves layout editing.
+  referenceSuppressed=reference.active&&!reference.paused;
+  apply();
+ }
+ function resetGPeak(){if(win&&!win.isDestroyed()&&!hudNavigating)win.webContents.executeJavaScript('window.OverlayUIHost?.resetGPeak()').catch(reportError);}
+ function directRequested(){return !quitting&&!hudNavigating&&!closingManager&&!!manager&&!manager.isDestroyed()&&!manager.isMinimized()&&reference.active&&!reference.paused&&!referenceSuppressed&&reference.mode==='normal';}
  function sceneInteractive(){return directRequested()&&!closeBusy;}
  function managerBounds(){
   if(!win||win.isDestroyed()||!manager||manager.isDestroyed()||!manager.isVisible()||manager.isMinimized())return null;
@@ -180,14 +251,35 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  }
  function commitWindowLayers(){
   if(!win||win.isDestroyed()||quitting)return;
-  const panel=manager&&!manager.isDestroyed()?manager:null;
-  // Only interactive direct editing shares the manager's normal Windows stack.
-  // The click-through ghost keeps the passive HUD's overlay layer.
-  const overlay=!reference.active||reference.paused||reference.mode!=='normal';
-  const changed=win.isAlwaysOnTop()!==overlay;
-  if(changed)win.setAlwaysOnTop(overlay,'screen-saver');
-  if(panel&&panel.isAlwaysOnTop())panel.setAlwaysOnTop(false);
-  if(changed&&!overlay&&panel&&panel.isVisible()&&!panel.isMinimized())panel.moveTop();
+  if(!win.isAlwaysOnTop())win.setAlwaysOnTop(true,'screen-saver');
+  const direct=directRequested(),panel=direct&&manager.isVisible()?manager.getBounds():null;
+  let shape=[],scale=1;
+  if(panel){
+   // The HUD stays above the taskbar. The native hole leaves the normal
+   // editor panel visible and clickable without raising or focusing it.
+   const host=win.getBounds(),display=selectedDisplay(),work=display.workArea;
+   scale=display.scaleFactor;
+   const left=Math.max(0,Math.max(panel.x,work.x)-host.x);
+   const top=Math.max(0,Math.max(panel.y,work.y)-host.y);
+   const right=Math.min(host.width,Math.min(panel.x+panel.width,work.x+work.width)-host.x);
+   const bottom=Math.min(host.height,Math.min(panel.y+panel.height,work.y+work.height)-host.y);
+   if(left<right&&top<bottom){
+    shape=[
+     {x:0,y:0,width:host.width,height:top},
+     {x:0,y:bottom,width:host.width,height:host.height-bottom},
+     {x:0,y:top,width:left,height:bottom-top},
+     {x:right,y:top,width:host.width-right,height:bottom-top}
+    ].filter(rect=>rect.width>0&&rect.height>0);
+    // An empty list means "restore the full window" in Electron.
+    if(!shape.length)shape=[{x:0,y:0,width:0,height:0}];
+   }
+  }
+  const key=JSON.stringify([shape,shape.length?scale:1]);
+  if(key!==lastHudShape){win.setShape(shape);lastHudShape=key;}
+  // A topmost HWND shares its band with the taskbar. Entering direct
+  // editing raises the already-shown HUD once, without activation.
+  if(!direct)directHudRaised=false;
+  else if(!directHudRaised&&win.isVisible()){directHudRaised=true;win.moveTop();}
  }
  function restoreDirectEditor(){
   // Preserve the normal-window snapshot until Windows restores its geometry.
@@ -200,7 +292,12 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   try{
    manager.setResizable(saved.resizable);manager.setMaximizable(saved.maximizable);
    manager.setMinimumSize(...saved.minimumSize);manager.setBounds(saved.normalBounds);
-   if(saved.maximized&&!manager.isMinimized())manager.maximize();
+   if(saved.maximized){
+    // Maximizing a hidden normal window can activate it on Windows.
+    // A visibility shortcut restores the panel without taking focus.
+    if(referenceSuppressed&&!manager.isFocused())restoreManagerMaximized=true;
+    else manager.maximize();
+   }
    if(saved.visible&&!closingManager&&!quitting&&!manager.isMinimized())manager.showInactive();
    commitWindowLayers();
   }finally{directChanging=false;}
@@ -210,7 +307,8 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   if(!directRequested()){restoreDirectEditor();return;}
   const entering=!directSaved,managerWasFocused=manager.isFocused();
   if(!directSaved){
-   directSaved={bounds:manager.getBounds(),normalBounds:manager.getNormalBounds(),minimumSize:manager.getMinimumSize(),maximized:manager.isMaximized(),resizable:manager.isResizable(),maximizable:manager.isMaximizable(),visible:manager.isVisible()};
+   directSaved={bounds:manager.getBounds(),normalBounds:manager.getNormalBounds(),minimumSize:manager.getMinimumSize(),maximized:manager.isMaximized()||restoreManagerMaximized,resizable:manager.isResizable(),maximizable:manager.isMaximizable(),visible:manager.isVisible()};
+   restoreManagerMaximized=false;
    directEditor={active:true,compact:false,fullScreen:true,toolbarRect:null};directChanging=true;
    try{if(manager.isMaximized())manager.unmaximize();manager.setMinimumSize(600,480);manager.setResizable(false);manager.setMaximizable(false);}finally{directChanging=false;}
   }
@@ -351,8 +449,12 @@ if(!app.requestSingleInstanceLock())app.quit();else{
     for(const key of ['anchorX','bottomRatio','heightRatio','edgeRatio'])if(next.placement[key]!=null&&!Number.isFinite(next.placement[key]))throw Error('Invalid placement: '+key);
    }
    if(JSON.stringify(next)===JSON.stringify(desktopSettings))return;
-   if(next.layoutShortcut!=null)normalizeLayoutShortcut(next.layoutShortcut);
-   if(shortcutReady&&next.layoutShortcut!=null&&normalizeLayoutShortcut(next.layoutShortcut)!==layoutShortcut){const result=registerLayoutShortcut(next.layoutShortcut,false);if(!result.ok)throw Error(result.error);}
+   if(shortcutReady){
+    const changes=shortcutBindings.filter(binding=>next[binding.field]!==desktopSettings[binding.field])
+     .map(binding=>[binding,normalizeShortcut(next[binding.field]??binding.defaultKey)])
+     .filter(([binding,accelerator])=>accelerator!==binding.accelerator);
+    if(changes.length){if(shortcutRecording)setShortcutRecording(false);replaceShortcuts(changes);refreshTrayMenu();}
+   }
    desktopSettings=next;
   }catch(error){
    reportError(error);
@@ -363,11 +465,13 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   apply();
  }
  function settings(){return desktopSettings;}
- function writeSettings(patch,refreshDisplay=false){
-  const next={...desktopSettings,...patch};
+ function storeSettings(next){
   fs.writeFileSync(config+'.tmp',JSON.stringify(next,null,2));
   fs.renameSync(config+'.tmp',config);
   desktopSettings=next;
+ }
+ function writeSettings(patch,refreshDisplay=false){
+  storeSettings({...desktopSettings,...patch});
   if(refreshDisplay)syncDisplays(true);
   apply();
  }
@@ -375,7 +479,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  function desktopScene(s,d){const width=Math.max(1,Math.min(1600,Math.round(s.width||600),d.bounds.width,Math.floor(d.bounds.height/.85))),area=d.bounds,p=displays?.get(d);return {...(s.placement?.mode==='relative'?require('./layout.js').screenStage(area.width,area.height,s.placement):{width:area.width,height:area.height,originX:Number.isFinite(s.x)&&s.x!==-1?s.x:area.width-width-24,originY:Number.isFinite(s.y)&&s.y!==-1?s.y:area.height-Math.round(width*.85)-24,scale:width/1000}),pixelWidth:p?.width||Math.round(area.width*d.scaleFactor),pixelHeight:p?.height||Math.round(area.height*d.scaleFactor),monitorPixelWidth:p?.width||Math.round(area.width*d.scaleFactor),monitorPixelHeight:p?.height||Math.round(area.height*d.scaleFactor)};}
  function saveScene(scene){const target=path.join(root,'assets','layout.json');try{const old=JSON.parse(fs.readFileSync(target,'utf8'));if(JSON.stringify(old.stage)===JSON.stringify(scene))return;const value=require('./layout.js').clean({...old,stage:scene});fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);}catch(e){fs.writeFileSync(path.join(root,'runtime','layout-error.txt'),String(e.message));}}
  function syncDisplays(refresh=false){if(!quitting&&win&&!win.isDestroyed())displays.request(selectedDisplay(),refresh);}
- function status(){const s=settings(),d=selectedDisplay();return {control:{pid:process.pid,session:controlSession,ready:!hudNavigating,managerOpen:!!manager&&!manager.isDestroyed()},lastOpenRequest,visible:!!s.visible,page:Math.max(1,Math.min(2,s.page||1)),reference:{...reference},layoutShortcut,layoutShortcutState:shortcutState(),sceneInteractive:sceneInteractive(),sceneInputCaptured,directEditor:{...directEditor},managerBounds:managerBounds(),monitor:s.monitor||0,selectedDisplayId:d.id,displays:screen.getAllDisplays().map((d,i)=>({index:i+1,id:d.id,label:d.label||'显示器 '+(i+1),bounds:d.bounds,scaleFactor:d.scaleFactor})),maximized:!!manager&&!manager.isDestroyed()&&manager.isMaximized(),baseUrl};}
+ function status(){const s=settings(),d=selectedDisplay(),{shortcuts,recording}=shortcutsState();return {control:{pid:process.pid,session:controlSession,ready:!hudNavigating,managerOpen:!!manager&&!manager.isDestroyed()},lastOpenRequest,visible:!!s.visible,page:Math.max(1,Math.min(2,s.page||1)),reference:{...reference},referenceSuppressed,layoutShortcut:shortcutState().accelerator,layoutShortcutState:legacyShortcutState(),shortcuts,recording,sceneInteractive:sceneInteractive(),sceneInputCaptured,directEditor:{...directEditor},managerBounds:managerBounds(),monitor:s.monitor||0,selectedDisplayId:d.id,displays:screen.getAllDisplays().map((d,i)=>({index:i+1,id:d.id,label:d.label||'显示器 '+(i+1),bounds:d.bounds,scaleFactor:d.scaleFactor})),maximized:!!manager&&!manager.isDestroyed()&&manager.isMaximized(),baseUrl};}
  function publish(){
   if(manager&&!manager.isDestroyed()){
    const value=status(),text=JSON.stringify(value);if(text!==lastManagerState){lastManagerState=text;manager.webContents.send('manager-state',value);}
@@ -383,11 +487,11 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   if(win&&!win.isDestroyed()){
    const interaction={sceneInteractive:sceneInteractive(),sceneInputCaptured,directEditor:{...directEditor},managerBounds:managerBounds()};
    const hostText=JSON.stringify(interaction);if(hostText!==lastHostState){lastHostState=hostText;win.webContents.send('manager-state',interaction);}
-   const value={...reference,...interaction},text=JSON.stringify(value);if(text!==lastReferenceState){lastReferenceState=text;win.webContents.send('ui-reference',value);}
+   const value={...reference,active:reference.active&&!referenceSuppressed,...interaction},text=JSON.stringify(value);if(text!==lastReferenceState){lastReferenceState=text;win.webContents.send('ui-reference',value);}
   }
  }
  function hudPresentation(){
-  const active=reference.active&&!reference.paused;
+  const active=reference.active&&!reference.paused&&!referenceSuppressed;
   const visible=active?reference.mode!=='hidden':!!settings().visible;
   // The manager consumes this renderer's canvas. A hidden native window can
   // stop its animation frames even with backgroundThrottling:false, so keep
@@ -398,7 +502,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  function persistStatus(){
   if(quitting||!win||win.isDestroyed())return;
   const d=selectedDisplay(),scene=desktopScene(settings(),d),snapshot=status(),presentation=hudPresentation();
-  const value=JSON.stringify({control:snapshot.control,lastOpenRequest:snapshot.lastOpenRequest,pid:process.pid,visible:presentation.visible&&win.isVisible(),configuredVisible:snapshot.visible,presentation:{...presentation,windowShown:win.isVisible(),opacity:win.getOpacity()},bounds:win.getBounds(),alwaysOnTop:win.isAlwaysOnTop(),transparent:true,clickThrough:!sceneInputCaptured,sceneInteractive:sceneInteractive(),referenceInteracting,directEditor:{...directEditor},sceneDragging,layoutShortcut:shortcutState(),scene,reference:{...reference},tray:trayController?.getStatus()||null,displays:snapshot.displays});
+  const value=JSON.stringify({control:snapshot.control,lastOpenRequest:snapshot.lastOpenRequest,pid:process.pid,visible:presentation.visible&&win.isVisible(),configuredVisible:snapshot.visible,presentation:{...presentation,windowShown:win.isVisible(),opacity:win.getOpacity()},bounds:win.getBounds(),alwaysOnTop:win.isAlwaysOnTop(),transparent:true,clickThrough:!sceneInputCaptured,sceneInteractive:sceneInteractive(),referenceInteracting,directEditor:{...directEditor},sceneDragging,layoutShortcut:snapshot.layoutShortcutState,shortcuts:snapshot.shortcuts,shortcutRecording,scene,reference:{...reference},referenceSuppressed,tray:trayController?.getStatus()||null,displays:snapshot.displays});
   if(value===lastStatus){pendingStatusText=null;return;}
   pendingStatusText=value;
   const flush=()=>{persistTimer=null;const text=pendingStatusText;pendingStatusText=null;if(text===null||text===lastStatus||quitting)return;try{fs.writeFileSync(statusFile,text);lastStatus=text;lastPersistAt=performance.now();}catch(error){reportError(error);}};
@@ -498,7 +602,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  }
  async function closeManager(quit=false){
   if(!manager||manager.isDestroyed()||closingManager||closeBusy)return;
-  const target=manager,previousReference={...reference},externalRequest=quit?shutdownRequest:null;setLayoutShortcutRecording(false);closeBusy=true;updateSceneInput();publish();
+  const target=manager,previousReference={...reference},externalRequest=quit?shutdownRequest:null;setShortcutRecording(false);closeBusy=true;updateSceneInput();publish();
   try{
    const expression=externalRequest?'Date.now()<'+externalRequest.expiresAt+' && window.OverlayManager?.requestClose()':'window.OverlayManager?.requestClose()';
    const ok=await target.webContents.executeJavaScript(expression);
@@ -518,9 +622,9 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   try{
    const ok=await target.webContents.executeJavaScript('window.OverlayManager?.prepareMinimize()');
    if(target!==manager||target.isDestroyed())return false;
-   setLayoutShortcutRecording(false);
+   setShortcutRecording(false);
    if(ok!==true){await showManagerAfterCloseDeclined(target);return false;}
-   reference={active:false,paused:false,mode:'ghost'};sceneDragging=false;referenceGestureActive=false;apply();
+   reference={active:false,paused:false,mode:'ghost'};referenceSuppressed=false;sceneDragging=false;referenceGestureActive=false;apply();
    // Native taskbar/system minimization has already happened. Preserve any
    // later explicit restore instead of replaying the older minimize intent.
    if(!nativeMinimize)target.minimize();
@@ -582,19 +686,10 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   displays=createDisplayController({screen,root,onChange:result=>{try{fs.writeFileSync(path.join(root,'runtime','display-sync.json'),JSON.stringify(result,null,2));}catch(error){reportError(error);}apply();},onError:reportError});
   win=new BrowserWindow({width:600,height:510,show:false,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,skipTaskbar:true,focusable:false,resizable:false,thickFrame:false,webPreferences:{preload:path.join(root,'desktop-preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}});win.setMenu(null);win.setAlwaysOnTop(true,'screen-saver');win.setIgnoreMouseEvents(true,{forward:false});win.setFocusable(false);
   win.webContents.setWindowOpenHandler(({url})=>url.split('?')[0]===managerUrl?{action:'allow',overrideBrowserWindowOptions:{icon:path.join(root,'assets','app.ico'),width:1440,height:960,minWidth:960,minHeight:640,frame:false,transparent:false,backgroundColor:'#101112',show:true,focusable:true,alwaysOnTop:false,skipTaskbar:false,resizable:true,minimizable:true,maximizable:true,fullscreenable:false,webPreferences:{preload:path.join(root,'desktop-preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}}}:{action:'deny'});
-  win.webContents.on('did-create-window',child=>{if(manager&&!manager.isDestroyed()){child.close();manager.show();return;}managerDisplayId=selectedDisplay().id;manager=child;lastManagerState='';child.setMenu(null);child.setParentWindow(null);child.setFocusable(true);child.setSkipTaskbar(false);commitWindowLayers();child.webContents.setWindowOpenHandler(()=>({action:'deny'}));child.webContents.on('will-navigate',(e,url)=>{if(url.split('?')[0]!==managerUrl)e.preventDefault();});child.on('close',e=>{if(closingManager)return;e.preventDefault();closeManager();});child.webContents.on('will-prevent-unload',()=>{finishShutdownRequest('cancelled','The edit stayed open because saving or closing was declined.');quitAfterManager=false;closingManager=false;if(closingReference)reference=closingReference;apply();child.webContents.send('manager-suspended',false);});child.on('blur',()=>setLayoutShortcutRecording(false));child.on('closed',()=>{setLayoutShortcutRecording(false);endReferenceInteraction();directSaved=null;directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null};sceneDragging=false;referenceGestureActive=false;manager=null;managerDisplayId=null;reference={active:false,paused:false,mode:'ghost'};if(quitAfterManager){app.quit();return;}apply();if(win&&!win.isDestroyed())win.webContents.executeJavaScript('window.OverlayUIHost?.managerClosed()').catch(reportError);});
-   child.on('minimize',()=>{if(minimizingManager!==child)void minimizeManager(child);});child.on('restore',()=>{reference.paused=false;apply();child.webContents.send('manager-suspended',false);});for(const event of ['maximize','unmaximize'])child.on(event,publish);child.webContents.on('did-finish-load',()=>{lastManagerState='';apply();});for(const event of ['move','resize'])child.on(event,()=>{if(!directChanging){updateSceneInput();publish();persistStatus();}});for(const event of ['show','hide'])child.on(event,()=>{if(!directChanging)apply();});apply();
+  win.webContents.on('did-create-window',child=>{if(manager&&!manager.isDestroyed()){child.close();manager.show();return;}managerDisplayId=selectedDisplay().id;manager=child;lastManagerState='';child.setMenu(null);child.setParentWindow(null);child.setFocusable(true);child.setSkipTaskbar(false);commitWindowLayers();child.webContents.setWindowOpenHandler(()=>({action:'deny'}));child.webContents.on('will-navigate',(e,url)=>{if(url.split('?')[0]!==managerUrl)e.preventDefault();});child.on('close',e=>{if(closingManager)return;e.preventDefault();closeManager();});child.webContents.on('will-prevent-unload',()=>{finishShutdownRequest('cancelled','The edit stayed open because saving or closing was declined.');quitAfterManager=false;closingManager=false;if(closingReference)reference=closingReference;apply();child.webContents.send('manager-suspended',false);});child.on('focus',()=>{if(restoreManagerMaximized){restoreManagerMaximized=false;child.maximize();}});child.on('blur',()=>setShortcutRecording(false));child.on('closed',()=>{setShortcutRecording(false);referenceSuppressed=false;restoreManagerMaximized=false;endReferenceInteraction();directSaved=null;directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null};sceneDragging=false;referenceGestureActive=false;manager=null;managerDisplayId=null;reference={active:false,paused:false,mode:'ghost'};if(quitAfterManager){app.quit();return;}apply();if(win&&!win.isDestroyed())win.webContents.executeJavaScript('window.OverlayUIHost?.managerClosed()').catch(reportError);});
+   child.on('minimize',()=>{if(minimizingManager!==child)void minimizeManager(child);});child.on('restore',()=>{reference.paused=false;apply();child.webContents.send('manager-suspended',false);});for(const event of ['maximize','unmaximize'])child.on(event,publish);child.webContents.on('did-start-navigation',details=>{if(details.isMainFrame&&!details.isSameDocument)setShortcutRecording(false);});child.webContents.on('render-process-gone',()=>setShortcutRecording(false));child.webContents.on('did-finish-load',()=>{lastManagerState='';apply();});for(const event of ['move','resize'])child.on(event,()=>{if(!directChanging){updateSceneInput();commitWindowLayers();publish();persistStatus();}});for(const event of ['show','hide'])child.on(event,()=>{if(!directChanging)apply();});apply();
   });
   win.on('show',()=>{if(!hudNavigating&&!quitting)win.webContents.send('ui-draw-demand',true);});
-  // Activating the direct editor raises the HUD. Re-stack its independent
-  // panel once for this focus event without transferring keyboard focus.
-  win.on('focus',()=>{
-   if(!directRequested())return;
-   commitWindowLayers();
-   // moveTop uses SWP_SHOWWINDOW on Windows: never reveal a full-screen or
-   // drag-hidden panel, and never touch the native iconic presentation.
-   if(manager&&!manager.isDestroyed()&&manager.isVisible()&&!manager.isMinimized())manager.moveTop();
-  });
   win.on('close',event=>{if(!allowHudClose&&!quitting){event.preventDefault();requestOverlayQuit();}});
   win.on('blur',()=>{if(referenceInteracting){endReferenceInteraction();recordSceneInput('blur');win.webContents.send('scene-input-cancelled',{reason:'现场编辑已失去焦点'});publish();persistStatus();}});
   win.webContents.on('before-mouse-event',(_event,mouse)=>{if(!directEditor.active)return;const type=['mouseMove','mouseDown','mouseUp','mouseWheel','mouseEnter','mouseLeave'].includes(mouse.type)?mouse.type:'mouseOther';recordSceneInput(type,{x:mouse.x,y:mouse.y,button:mouse.button,captured:sceneInputCaptured,focused:win.isFocused()});});
@@ -613,9 +708,18 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   ipcMain.handle('updates-install',e=>updateResult(e,()=>updateService.install()));
   ipcMain.handle('updates-clear',e=>updateResult(e,()=>updateService.clearModules(),true));
   ipcMain.handle('updates-release',e=>updateResult(e,async()=>{const url=updateService.snapshot().release?.url;if(!url||!/^https:\/\/github\.com\//i.test(url))return {ok:false,error:'发布说明暂不可用，请稍后重试'};await shell.openExternal(url);return {ok:true};}));
-  ipcMain.handle('layout-shortcut-get',e=>trustedManager(e)?shortcutState():{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
-  ipcMain.handle('layout-shortcut-recording',(e,value)=>trustedManager(e)&&typeof value==='boolean'?setLayoutShortcutRecording(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
-  ipcMain.handle('layout-shortcut-set',(e,value)=>trustedManager(e)?registerLayoutShortcut(value):{ok:false,accelerator:layoutShortcut,error:'非当前管理页面'});
+  const shortcutDenied={ok:false,error:'非当前管理页面'};
+  ipcMain.handle('shortcuts-get',e=>trustedManager(e)?shortcutsState():shortcutDenied);
+  ipcMain.handle('shortcuts-recording',(e,value)=>trustedManager(e)&&typeof value==='boolean'?setShortcutRecording(value):shortcutDenied);
+  ipcMain.handle('shortcut-set',(e,id,value)=>trustedManager(e)?setShortcut(id,value):shortcutDenied);
+  const legacyDenied=()=>({...shortcutDenied,accelerator:shortcutState().accelerator});
+  ipcMain.handle('layout-shortcut-get',e=>trustedManager(e)?legacyShortcutState():legacyDenied());
+  ipcMain.handle('layout-shortcut-recording',(e,value)=>{
+   if(!trustedManager(e)||typeof value!=='boolean')return legacyDenied();
+   const result=setShortcutRecording(value);
+   return result.ok?legacyShortcutState():{...legacyShortcutState(),ok:false,error:result.error};
+  });
+  ipcMain.handle('layout-shortcut-set',(e,value)=>trustedManager(e)?setShortcut('layout',value):legacyDenied());
   ipcMain.handle('scene-dragging',(e,value,regions)=>trustedHost(e)&&typeof value==='boolean'?setSceneDragging(value,regions):{ok:false,error:'非当前现场页面'});
   ipcMain.handle('scene-input-diagnostics',e=>trustedHost(e)||trustedManager(e)?{ok:true,epoch:sceneDiagnostics.epoch,counts:{...sceneDiagnostics.counts},events:sceneDiagnostics.events.map(value=>({...value})),state:{reference:{...reference},directEditor:{...directEditor},sceneInputCaptured,referenceInteracting,sceneDragging}}:{ok:false,error:'非当前桌面页面'});
   ipcMain.handle('scene-input-capture',(e,value)=>{if(!trustedHost(e)||typeof value!=='boolean')return {ok:false,captured:false,error:'非当前现场页面'};return {ok:true,captured:setSceneInputCapture(value),interactive:sceneInteractive()};});
@@ -635,11 +739,13 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    let regions=directRegions;
    try{if(value?.regions!==undefined)regions=cleanSceneRegions(value.regions);else if(active&&mode==='normal'&&!directEditor.active)throw Error('现场布局区域尚未就绪');}catch(error){return {ok:false,error:error.message};}
    if(value?.gestureActive!==undefined&&typeof value.gestureActive!=='boolean')return {ok:false,error:'现场手势状态无效'};
-   const returnManagerFocus=directEditor.active&&!(active&&mode==='normal')&&!closeBusy&&!closingManager&&!quitting&&!manager.isMinimized();
-   const enterSceneFocus=!directEditor.active&&active&&mode==='normal'&&!closeBusy&&!closingManager&&!quitting&&!manager.isMinimized();
+   if(!active||value?.explicit===true)referenceSuppressed=false;
+   const direct=active&&mode==='normal'&&!referenceSuppressed;
+   const returnManagerFocus=directEditor.active&&!direct&&!closeBusy&&!closingManager&&!quitting&&!manager.isMinimized();
+   const enterSceneFocus=!directEditor.active&&direct&&!closeBusy&&!closingManager&&!quitting&&!manager.isMinimized();
    directRegions=regions;referenceGestureActive=value?.gestureActive===true;
    reference={active,paused:manager.isMinimized(),mode};
-   if(!active||mode!=='normal'){referenceGestureActive=false;sceneDragging=false;}
+   if(!direct){referenceGestureActive=false;sceneDragging=false;}
    apply();
    // This hand-off belongs to the explicit mode request. Layout changes and
    // automatic panel placement keep using showInactive without refocusing.
@@ -653,10 +759,11 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   ipcMain.handle('wheel-list',e=>{if(!trustedManager(e))return {ok:false,error:'非当前管理页面'};try{return {ok:true,faces:wheelStore.list()};}catch(err){return {ok:false,error:err.message};}});ipcMain.handle('wheel-download',async(e,id)=>{if(!trustedManager(e))return {ok:false,error:'非当前管理页面'};try{return await wheelStore.install(id);}catch(err){return {ok:false,error:err.message};}});
   function writeLayout(input){try{const value=require('./layout.js').clean({...input,stage:desktopScene(settings(),selectedDisplay())}),target=path.join(root,'assets','layout.json');fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);return {ok:true};}catch(err){return {ok:false,error:String(err.message)};}}
   ipcMain.handle('layout-save',(e,input)=>trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'});ipcMain.on('layout-save-sync',(e,input)=>{e.returnValue=trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'};});ipcMain.on('edit-finish',e=>{if(trustedManager(e))closeManager();});ipcMain.on('manager-open',(e,page)=>{if(trustedHost(e))openManager(page);});
-  let initialShortcut=DEFAULT_LAYOUT_SHORTCUT;
-  try{initialShortcut=normalizeLayoutShortcut(settings().layoutShortcut??DEFAULT_LAYOUT_SHORTCUT);}catch(error){layoutShortcutError=error.message;}
-  const registration=registerLayoutShortcut(initialShortcut,false);
-  if(!registration.ok){layoutShortcut=initialShortcut;layoutShortcutError=registration.error;shortcutReady=true;}
+  for(const binding of shortcutBindings){
+   try{binding.accelerator=normalizeShortcut(settings()[binding.field]??binding.defaultKey);}
+   catch{binding.accelerator=binding.defaultKey;}
+  }
+  restoreShortcuts();shortcutReady=true;
   trayController=createDesktopTray({Tray,nativeImage,root,tooltipSuffix:shortcutState().ok?shortcutLabel()+' 编辑':'编辑快捷键未注册',onChange:persistStatus});tray=trayController.tray;tray.on('click',()=>{void openManager('overview');});refreshTrayMenu();
   componentService=createComponentService({root,beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},reloadHud:reloadComponentHud});
   updateService=createUpdateService({root,request:createElectronRequest(net),onState:state=>{trayController?.setUpdateAvailable(state.available);refreshTrayMenu();if(manager&&!manager.isDestroyed())manager.webContents.send('updates-state',state);},beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},applyModules:async expectedRevision=>reloadComponentHud(expectedRevision),installSetup:async(file,attempt,onExit)=>{await new Promise((resolve,reject)=>{const child=spawn(file,['--quiet','--update','--root',root,'--restart','--attempt-id',attempt.attemptId],{detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('exit',code=>onExit(code));child.once('spawn',()=>{child.unref();resolve();});});}});
