@@ -5,6 +5,7 @@ const {spawn}=require('node:child_process');
 const {performance}=require('node:perf_hooks');
 const {createDisplayController}=require('./desktop-display');
 const {watchFiles}=require('./desktop-files');
+const {createHudLayer}=require('./desktop-hud-layer');
 const root=__dirname,config=path.join(root,'runtime','desktop.json'),statusFile=path.join(root,'runtime','desktop-status.json');
 app.setPath('userData',path.join(root,'runtime','desktop-profile'));app.setName('SimRacingOverlay');
 if(process.platform==='win32')app.setAppUserModelId('SimRacingOverlay');
@@ -18,7 +19,7 @@ const wheelCatalog=JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-cat
 const wheelStore=createStore({request:createElectronRequest(net),root,catalog:wheelCatalog,validate:require('./wheel-profile').validate});
 if(!app.requestSingleInstanceLock())app.quit();else{
  let updateService,componentService,updateStartup,updateTimer,moduleOperation=false;
- let win,manager,tray,trayController,timer,displays,loadedRevision=null,closingManager=false,closeBusy=false,managerDisplayId=null;
+ let win,manager,tray,trayController,timer,displays,hudLayer,loadedRevision=null,closingManager=false,closeBusy=false,managerDisplayId=null;
  let revision=Date.now(),lastScene='',lastBounds='',lastPage=null,lastPresentation=null,lastStatus='',quitting=false;
  let reloadTimer=null,reloadAttempts=0,navigation=0,hudUrl=null,configRetry=null,quitAfterManager=false,closingReference=null;
  const unwatch=[];
@@ -36,9 +37,9 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  };
  const shortcutBindings=Object.values(shortcuts);
  let shortcutReady=false,shortcutRecording=false;
- let sceneInputCaptured=false,referenceInteracting=false,quitProcess=null,allowHudClose=false;
+ let sceneInputCaptured=false,referenceInteracting=false,quitProcess=null,allowHudClose=false,closingHudLayer=false;
  let directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null},directSaved=null,directRegions=[],directLayoutKey='';
- let lastHudShape='',directHudRaised=false,restoreManagerMaximized=false;
+ let lastHudShape='',restoreManagerMaximized=false;
  let referenceGestureActive=false,sceneDragging=false,minimizingManager=null;
  let applying=false,applyAgain=false,directChanging=false,lastManagerState='',lastHostState='',lastReferenceState='';
  let persistTimer=null,lastPersistAt=-Infinity,pendingStatusText=null;
@@ -52,6 +53,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  }
 
  function normalizeShortcut(value){
+  if(value===null)return null;
   if(typeof value!=='string'||value.length>100)throw Error('请输入有效的组合键');
   const parts=value.split('+').map(part=>part.trim());
   if(parts.length<2||parts.some(part=>!part))throw Error('组合键需要修饰键和一个按键');
@@ -67,13 +69,23 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   if(!key||!modifiers.size)throw Error('组合键需要修饰键和一个按键');
   return ['Control','Alt','Shift','Super'].filter(part=>modifiers.has(part)).concat(key).join('+');
  }
- function shortcutState(binding=shortcuts.layout){return {ok:binding.registered===true,accelerator:binding.accelerator||binding.defaultKey,error:binding.error||null};}
+ function configuredShortcut(value,binding){
+  return Object.hasOwn(value,binding.field)?normalizeShortcut(value[binding.field]):binding.defaultKey;
+ }
+ function shortcutState(binding=shortcuts.layout){
+  const accelerator=binding.accelerator===undefined?binding.defaultKey:binding.accelerator;
+  return {ok:binding.registered===true,accelerator,disabled:accelerator===null,error:binding.error||null};
+ }
  function shortcutsState(){return {ok:true,shortcuts:Object.fromEntries(Object.entries(shortcuts).map(([id,binding])=>[id,shortcutState(binding)])),recording:shortcutRecording};}
  function legacyShortcutState(){return {...shortcutState(),recording:shortcutRecording};}
- function shortcutLabel(binding=shortcuts.layout){return shortcutState(binding).accelerator.replace(/Control/g,'Ctrl');}
+ function shortcutLabel(binding=shortcuts.layout){return binding.accelerator?.replace(/Control/g,'Ctrl')||'';}
+ function editShortcutTooltip(){
+  const state=shortcutState();
+  return state.disabled?'':state.ok?shortcutLabel()+' 编辑':'编辑快捷键未注册';
+ }
  function shortcutKey(accelerator){
   // Electron expands Plus to the shifted '=' key.
-  if(!accelerator.endsWith('+Plus'))return accelerator;
+  if(!accelerator?.endsWith('+Plus'))return accelerator;
   return normalizeShortcut(accelerator.split('+').filter(part=>part!=='Shift'&&part!=='Plus').concat('Shift','=').join('+'));
  }
  function layoutShortcutAction(){if(manager&&!manager.isDestroyed()&&reference.active&&!manager.isMinimized())manager.webContents.executeJavaScript('window.OverlayManager?.finishEditing()').catch(reportError);else void openManager('layout');}
@@ -90,15 +102,17 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   // Chromium's Windows global listener omits MOD_WIN when registering a key.
   return process.platform==='win32'&&accelerator.split('+').includes('Super')?'全局快捷键不支持 Windows 键，请使用 Ctrl、Alt 或 Shift':null;
  }
- function restoreShortcuts(){
+ function restoreShortcuts(resumingRecording=false){
   const assigned=new Map();
   for(const binding of shortcutBindings){
+   if(binding.accelerator===null){binding.registered=false;binding.error=null;continue;}
+   if(resumingRecording&&!binding.registered)continue;
    const unsupported=shortcutUnsupported(binding.accelerator);
    if(unsupported){binding.error=unsupported;continue;}
    const key=shortcutKey(binding.accelerator),conflict=assigned.get(key);
    if(conflict){binding.error=shortcutConflict(conflict);continue;}
    assigned.set(key,binding);
-   if(!binding.registered)binding.registered=registerNativeShortcut(binding,binding.accelerator);
+   if(resumingRecording||!binding.registered)binding.registered=registerNativeShortcut(binding,binding.accelerator);
    binding.error=binding.registered?null:shortcutUnavailable;
   }
  }
@@ -106,6 +120,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   const registered=[];
   try{
    for(const [binding,accelerator] of changes){
+    if(accelerator===null)continue;
     const unsupported=shortcutUnsupported(accelerator);
     if(unsupported)throw Error(unsupported);
     const key=shortcutKey(accelerator);
@@ -123,23 +138,24 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }
   for(const [binding,accelerator] of changes){
    const previous=binding.accelerator;
-   if(binding.registered&&shortcutKey(previous)!==shortcutKey(accelerator))globalShortcut.unregister(previous);
-   binding.accelerator=accelerator;binding.registered=true;binding.error=null;
+   if(!shortcutRecording&&binding.registered&&shortcutKey(previous)!==shortcutKey(accelerator))globalShortcut.unregister(previous);
+   binding.accelerator=accelerator;binding.registered=accelerator!==null;binding.error=null;
   }
-  restoreShortcuts();
+  // Unbinding must not register another action as a side effect.
+  if(changes.every(([,accelerator])=>accelerator!==null))restoreShortcuts();
  }
  function setShortcut(id,value){
   const binding=typeof id==='string'&&Object.hasOwn(shortcuts,id)?shortcuts[id]:null;
   if(!binding)return {ok:false,error:'未知快捷键操作'};
   try{
    const accelerator=normalizeShortcut(value);
-   if(shortcutRecording)setShortcutRecording(false);
+   if(accelerator!==null&&shortcutRecording)setShortcutRecording(false);
    replaceShortcuts([[binding,accelerator]],()=>{
     try{storeSettings({...settings(),[binding.field]:accelerator});}
     catch(error){throw Error('快捷键保存失败：'+error.message);}
    });
    refreshTrayMenu();publish();persistStatus();
-   return shortcutState(binding);
+   return {...shortcutState(binding),ok:true};
   }catch(error){return {...shortcutState(binding),ok:false,error:error.message};}
  }
  function setShortcutRecording(active){
@@ -150,8 +166,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    for(const binding of shortcutBindings)if(binding.registered)globalShortcut.unregister(binding.accelerator);
   }else{
    shortcutRecording=false;
-   for(const binding of shortcutBindings)binding.registered=false;
-   restoreShortcuts();
+   restoreShortcuts(true);
   }
   refreshTrayMenu();publish();persistStatus();return shortcutsState();
  }
@@ -177,10 +192,10 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  }
  function refreshTrayMenu(){
   if(!tray||tray.isDestroyed())return;
-  trayController?.setTooltipSuffix(shortcutState().ok?shortcutLabel()+' 编辑':'编辑快捷键未注册');
+  trayController?.setTooltipSuffix(editShortcutTooltip());
   tray.setContextMenu(Menu.buildFromTemplate([
    {label:'打开管理窗口',click:()=>openManager('overview')},
-   {label:'编辑布局 ('+shortcutLabel()+')',click:()=>openManager('layout')},
+   {label:shortcuts.layout.label+(shortcutState().ok?' ('+shortcutLabel()+')':''),click:()=>openManager('layout')},
    {label:'盘面与设备输入',click:()=>openManager('inputs')},
    {label:'版本与更新'+(updateService?.snapshot().available?' · 有可用更新':''),click:()=>openManager('updates')},
    {label:shortcuts.visibility.label+(shortcutState(shortcuts.visibility).ok?' ('+shortcutLabel(shortcuts.visibility)+')':''),click:toggleOverlayVisibility},
@@ -249,9 +264,8 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }
   return {...rect,height:Math.max(rect.height,Math.floor(bottom-rect.y))};
  }
- function commitWindowLayers(){
+ function commitHudShape(){
   if(!win||win.isDestroyed()||quitting)return;
-  if(!win.isAlwaysOnTop())win.setAlwaysOnTop(true,'screen-saver');
   const direct=directRequested(),panel=direct&&manager.isVisible()?manager.getBounds():null;
   let shape=[],scale=1;
   if(panel){
@@ -276,10 +290,6 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }
   const key=JSON.stringify([shape,shape.length?scale:1]);
   if(key!==lastHudShape){win.setShape(shape);lastHudShape=key;}
-  // A topmost HWND shares its band with the taskbar. Entering direct
-  // editing raises the already-shown HUD once, without activation.
-  if(!direct)directHudRaised=false;
-  else if(!directHudRaised&&win.isVisible()){directHudRaised=true;win.moveTop();}
  }
  function restoreDirectEditor(){
   // Preserve the normal-window snapshot until Windows restores its geometry.
@@ -299,7 +309,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
     else manager.maximize();
    }
    if(saved.visible&&!closingManager&&!quitting&&!manager.isMinimized())manager.showInactive();
-   commitWindowLayers();
+   commitHudShape();
   }finally{directChanging=false;}
  }
  function reconcileDirectEditor(){
@@ -331,7 +341,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
     // temporary drag hide. Escape must work even before the first HUD click.
     if(enterFullScreen&&managerWasFocused){referenceInteracting=true;setSceneFocusable(true);if(!win.isFocused())win.focus();recordSceneInput('fallbackFocus',{focused:win.isFocused()});}
    }
-   commitWindowLayers();
+   commitHudShape();
   }finally{directChanging=false;}
  }
  function setSceneFocusable(value){
@@ -451,9 +461,12 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    if(JSON.stringify(next)===JSON.stringify(desktopSettings))return;
    if(shortcutReady){
     const changes=shortcutBindings.filter(binding=>next[binding.field]!==desktopSettings[binding.field])
-     .map(binding=>[binding,normalizeShortcut(next[binding.field]??binding.defaultKey)])
+     .map(binding=>[binding,configuredShortcut(next,binding)])
      .filter(([binding,accelerator])=>accelerator!==binding.accelerator);
-    if(changes.length){if(shortcutRecording)setShortcutRecording(false);replaceShortcuts(changes);refreshTrayMenu();}
+    if(changes.length){
+     if(shortcutRecording&&changes.some(([,accelerator])=>accelerator!==null))setShortcutRecording(false);
+     replaceShortcuts(changes);refreshTrayMenu();
+    }
    }
    desktopSettings=next;
   }catch(error){
@@ -550,10 +563,13 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }
   const page=Math.max(1,Math.min(2,s.page||1));
   if(page!==lastPage){lastPage=page;if(!hudNavigating)win.webContents.send('ui-page',page);}
-  reconcileDirectEditor();updateSceneInput();commitWindowLayers();
+  reconcileDirectEditor();updateSceneInput();commitHudShape();
   const presentation=hudPresentation();
-  if(!lastPresentation||presentation.opacity!==lastPresentation.opacity)win.setOpacity(presentation.opacity);
-  if(!lastPresentation||presentation.windowShown!==lastPresentation.windowShown){if(presentation.windowShown)win.showInactive();else win.hide();commitWindowLayers();}
+  const revealing=presentation.visible&&!lastPresentation?.visible;
+  if(!presentation.visible&&lastPresentation?.visible)win.setOpacity(0);
+  hudLayer.setVisible(presentation.visible);
+  if(!lastPresentation||presentation.windowShown!==lastPresentation.windowShown){if(presentation.windowShown)win.showInactive();else win.hide();commitHudShape();}
+  if(revealing){hudLayer.raise();win.setOpacity(1);}
   lastPresentation=presentation;
   loadHud();syncDisplays();publish();persistStatus();
   }finally{applying=false;if(applyAgain){applyAgain=false;queueMicrotask(apply);}}
@@ -684,10 +700,10 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  app.whenReady().then(()=>{
   readSettings();
   displays=createDisplayController({screen,root,onChange:result=>{try{fs.writeFileSync(path.join(root,'runtime','display-sync.json'),JSON.stringify(result,null,2));}catch(error){reportError(error);}apply();},onError:reportError});
-  win=new BrowserWindow({width:600,height:510,show:false,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,alwaysOnTop:true,skipTaskbar:true,focusable:false,resizable:false,thickFrame:false,webPreferences:{preload:path.join(root,'desktop-preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}});win.setMenu(null);win.setAlwaysOnTop(true,'screen-saver');win.setIgnoreMouseEvents(true,{forward:false});win.setFocusable(false);
+  win=new BrowserWindow({width:600,height:510,show:false,opacity:0,frame:false,transparent:true,backgroundColor:'#00000000',hasShadow:false,skipTaskbar:true,focusable:false,resizable:false,thickFrame:false,webPreferences:{preload:path.join(root,'desktop-preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}});hudLayer=createHudLayer(win,root,reportError);win.setMenu(null);win.setIgnoreMouseEvents(true,{forward:false});win.setFocusable(false);
   win.webContents.setWindowOpenHandler(({url})=>url.split('?')[0]===managerUrl?{action:'allow',overrideBrowserWindowOptions:{icon:path.join(root,'assets','app.ico'),width:1440,height:960,minWidth:960,minHeight:640,frame:false,transparent:false,backgroundColor:'#101112',show:true,focusable:true,alwaysOnTop:false,skipTaskbar:false,resizable:true,minimizable:true,maximizable:true,fullscreenable:false,webPreferences:{preload:path.join(root,'desktop-preload.js'),nodeIntegration:false,contextIsolation:true,sandbox:true,backgroundThrottling:false}}}:{action:'deny'});
-  win.webContents.on('did-create-window',child=>{if(manager&&!manager.isDestroyed()){child.close();manager.show();return;}managerDisplayId=selectedDisplay().id;manager=child;lastManagerState='';child.setMenu(null);child.setParentWindow(null);child.setFocusable(true);child.setSkipTaskbar(false);commitWindowLayers();child.webContents.setWindowOpenHandler(()=>({action:'deny'}));child.webContents.on('will-navigate',(e,url)=>{if(url.split('?')[0]!==managerUrl)e.preventDefault();});child.on('close',e=>{if(closingManager)return;e.preventDefault();closeManager();});child.webContents.on('will-prevent-unload',()=>{finishShutdownRequest('cancelled','The edit stayed open because saving or closing was declined.');quitAfterManager=false;closingManager=false;if(closingReference)reference=closingReference;apply();child.webContents.send('manager-suspended',false);});child.on('focus',()=>{if(restoreManagerMaximized){restoreManagerMaximized=false;child.maximize();}});child.on('blur',()=>setShortcutRecording(false));child.on('closed',()=>{setShortcutRecording(false);referenceSuppressed=false;restoreManagerMaximized=false;endReferenceInteraction();directSaved=null;directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null};sceneDragging=false;referenceGestureActive=false;manager=null;managerDisplayId=null;reference={active:false,paused:false,mode:'ghost'};if(quitAfterManager){app.quit();return;}apply();if(win&&!win.isDestroyed())win.webContents.executeJavaScript('window.OverlayUIHost?.managerClosed()').catch(reportError);});
-   child.on('minimize',()=>{if(minimizingManager!==child)void minimizeManager(child);});child.on('restore',()=>{reference.paused=false;apply();child.webContents.send('manager-suspended',false);});for(const event of ['maximize','unmaximize'])child.on(event,publish);child.webContents.on('did-start-navigation',details=>{if(details.isMainFrame&&!details.isSameDocument)setShortcutRecording(false);});child.webContents.on('render-process-gone',()=>setShortcutRecording(false));child.webContents.on('did-finish-load',()=>{lastManagerState='';apply();});for(const event of ['move','resize'])child.on(event,()=>{if(!directChanging){updateSceneInput();commitWindowLayers();publish();persistStatus();}});for(const event of ['show','hide'])child.on(event,()=>{if(!directChanging)apply();});apply();
+  win.webContents.on('did-create-window',child=>{if(manager&&!manager.isDestroyed()){child.close();manager.show();return;}managerDisplayId=selectedDisplay().id;manager=child;lastManagerState='';child.setMenu(null);child.setParentWindow(null);child.setFocusable(true);child.setSkipTaskbar(false);commitHudShape();child.webContents.setWindowOpenHandler(()=>({action:'deny'}));child.webContents.on('will-navigate',(e,url)=>{if(url.split('?')[0]!==managerUrl)e.preventDefault();});child.on('close',e=>{if(closingManager)return;e.preventDefault();closeManager();});child.webContents.on('will-prevent-unload',()=>{finishShutdownRequest('cancelled','The edit stayed open because saving or closing was declined.');quitAfterManager=false;closingManager=false;if(closingReference)reference=closingReference;apply();child.webContents.send('manager-suspended',false);});child.on('focus',()=>{if(restoreManagerMaximized){restoreManagerMaximized=false;child.maximize();}});child.on('blur',()=>setShortcutRecording(false));child.on('closed',()=>{setShortcutRecording(false);referenceSuppressed=false;restoreManagerMaximized=false;endReferenceInteraction();directSaved=null;directEditor={active:false,compact:false,fullScreen:false,toolbarRect:null};sceneDragging=false;referenceGestureActive=false;manager=null;managerDisplayId=null;reference={active:false,paused:false,mode:'ghost'};if(quitAfterManager){app.quit();return;}apply();if(win&&!win.isDestroyed())win.webContents.executeJavaScript('window.OverlayUIHost?.managerClosed()').catch(reportError);});
+   child.on('minimize',()=>{if(minimizingManager!==child)void minimizeManager(child);});child.on('restore',()=>{reference.paused=false;apply();child.webContents.send('manager-suspended',false);});for(const event of ['maximize','unmaximize'])child.on(event,publish);child.webContents.on('did-start-navigation',details=>{if(details.isMainFrame&&!details.isSameDocument)setShortcutRecording(false);});child.webContents.on('render-process-gone',()=>setShortcutRecording(false));child.webContents.on('did-finish-load',()=>{lastManagerState='';apply();});for(const event of ['move','resize'])child.on(event,()=>{if(!directChanging){updateSceneInput();commitHudShape();publish();persistStatus();}});for(const event of ['show','hide'])child.on(event,()=>{if(!directChanging)apply();});apply();
   });
   win.on('show',()=>{if(!hudNavigating&&!quitting)win.webContents.send('ui-draw-demand',true);});
   win.on('close',event=>{if(!allowHudClose&&!quitting){event.preventDefault();requestOverlayQuit();}});
@@ -760,11 +776,11 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   function writeLayout(input){try{const value=require('./layout.js').clean({...input,stage:desktopScene(settings(),selectedDisplay())}),target=path.join(root,'assets','layout.json');fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);return {ok:true};}catch(err){return {ok:false,error:String(err.message)};}}
   ipcMain.handle('layout-save',(e,input)=>trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'});ipcMain.on('layout-save-sync',(e,input)=>{e.returnValue=trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'};});ipcMain.on('edit-finish',e=>{if(trustedManager(e))closeManager();});ipcMain.on('manager-open',(e,page)=>{if(trustedHost(e))openManager(page);});
   for(const binding of shortcutBindings){
-   try{binding.accelerator=normalizeShortcut(settings()[binding.field]??binding.defaultKey);}
+   try{binding.accelerator=configuredShortcut(settings(),binding);}
    catch{binding.accelerator=binding.defaultKey;}
   }
   restoreShortcuts();shortcutReady=true;
-  trayController=createDesktopTray({Tray,nativeImage,root,tooltipSuffix:shortcutState().ok?shortcutLabel()+' 编辑':'编辑快捷键未注册',onChange:persistStatus});tray=trayController.tray;tray.on('click',()=>{void openManager('overview');});refreshTrayMenu();
+  trayController=createDesktopTray({Tray,nativeImage,root,tooltipSuffix:editShortcutTooltip(),onChange:persistStatus});tray=trayController.tray;tray.on('click',()=>{void openManager('overview');});refreshTrayMenu();
   componentService=createComponentService({root,beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},reloadHud:reloadComponentHud});
   updateService=createUpdateService({root,request:createElectronRequest(net),onState:state=>{trayController?.setUpdateAvailable(state.available);refreshTrayMenu();if(manager&&!manager.isDestroyed())manager.webContents.send('updates-state',state);},beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},applyModules:async expectedRevision=>reloadComponentHud(expectedRevision),installSetup:async(file,attempt,onExit)=>{await new Promise((resolve,reject)=>{const child=spawn(file,['--quiet','--update','--root',root,'--restart','--attempt-id',attempt.attemptId],{detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('exit',code=>onExit(code));child.once('spawn',()=>{child.unref();resolve();});});}});
   updateStartup=setTimeout(()=>{void updateService.check().catch(reportError);},15000);updateTimer=setInterval(()=>{void updateService.check().catch(reportError);},6*60*60*1000);
@@ -804,6 +820,16 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   },300);
 
  });
- app.on('before-quit',event=>{if(manager&&!manager.isDestroyed()){event.preventDefault();closeManager(true);}else allowHudClose=true;});
+ app.on('before-quit',event=>{
+  if(manager&&!manager.isDestroyed()){event.preventDefault();closeManager(true);return;}
+  if(closingHudLayer){event.preventDefault();return;}
+  const stopped=hudLayer?.dispose();
+  if(stopped){
+   event.preventDefault();closingHudLayer=true;
+   void stopped.then(()=>{closingHudLayer=false;app.quit();});
+   return;
+  }
+  allowHudClose=true;
+ });
  app.on('will-quit',()=>{finishShutdownRequest('exiting');quitting=true;clearTimeout(updateStartup);clearInterval(updateTimer);updateService?.dispose();componentService?.dispose();clearInterval(timer);clearTimeout(reloadTimer);clearTimeout(configRetry);clearTimeout(obsStateRetry);clearTimeout(persistTimer);for(const stop of unwatch)stop();displays?.dispose();trayController?.dispose();globalShortcut.unregisterAll();});app.on('window-all-closed',()=>{clearInterval(timer);app.quit();});
 }

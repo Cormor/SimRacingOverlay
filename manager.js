@@ -118,19 +118,79 @@
 
  const SHORTCUT_DEFINITIONS={layout:{label:'编辑布局',accelerator:'Control+Alt+M'},visibility:{label:'显示/隐藏 HUD',accelerator:'Control+Alt+V'},resetGPeak:{label:'重置 G 峰值',accelerator:'Control+Alt+G'}};
  function normalizeShortcut(value){return String(value||'').replace(/\bCommandOrControl\b/gi,'Control').replace(/\bCtrl\b/gi,'Control').replace(/\bMeta\b/gi,'Win').replace(/\bSuper\b/gi,'Win');}
- function renderShortcutHint(){const hint=$('shortcutHint');if(shortcutNativeErrors.layout){hint.textContent='编辑布局快捷键未生效';hint.dataset.tone='danger';}else if(shortcutSaved.layout){hint.textContent=normalizeShortcut(shortcutSaved.layout)+' 编辑布局';delete hint.dataset.tone;}else{hint.textContent='布局快捷键未设置';delete hint.dataset.tone;}}
- function syncShortcutStatus(shortcuts){if(!shortcuts||typeof shortcuts!=='object')return;let changed=false;for(const action of Object.keys(SHORTCUT_DEFINITIONS)){const entry=shortcuts[action];if(!entry||typeof entry.accelerator!=='string')continue;const signature=JSON.stringify([entry.accelerator,entry.ok,entry.error||'']);if(signature===shortcutStatusSignatures[action])continue;shortcutStatusSignatures[action]=signature;const hadDraft=!!shortcutDrafts[action],oldNativeError=shortcutNativeErrors[action];shortcutSaved[action]=entry.accelerator;shortcutNativeErrors[action]=entry.ok===false?entry.error||'快捷键冲突，请更换组合键。':'';if(entry.ok===false&&!hadDraft)shortcutDrafts[action]=entry.accelerator;if(shortcutNativeErrors[action])shortcutMessage(action,shortcutNativeErrors[action],true);else if(oldNativeError&&!shortcutErrors[action])shortcutMessage(action,'');renderShortcut(action);changed=true;}if(changed)renderShortcutHint();}
+ function renderShortcutHint(){
+  const hint=$('shortcutHint'),saved=shortcutSaved.layout;
+  hint.textContent=shortcutNativeErrors.layout?'编辑布局快捷键未生效':saved?normalizeShortcut(saved)+' 编辑布局':'布局快捷键未绑定';
+  if(shortcutNativeErrors.layout)hint.dataset.tone='danger';else delete hint.dataset.tone;
+ }
+ function syncShortcutStatus(shortcuts){
+  if(!shortcuts||typeof shortcuts!=='object')return;
+  let changed=false;
+  for(const action of Object.keys(SHORTCUT_DEFINITIONS)){
+   const entry=shortcuts[action];
+   if(!entry||entry.accelerator!==null&&typeof entry.accelerator!=='string')continue;
+   const disabled=entry.accelerator===null;
+   const signature=JSON.stringify([entry.accelerator,!disabled&&entry.ok,entry.error||'']);
+   if(signature===shortcutStatusSignatures[action])continue;
+   shortcutStatusSignatures[action]=signature;
+   const oldNativeError=shortcutNativeErrors[action];
+   shortcutSaved[action]=entry.accelerator;
+   shortcutNativeErrors[action]=!disabled&&entry.ok===false?entry.error||'快捷键冲突，请更换组合键。':'';
+   if(shortcutNativeErrors[action]){
+    if(!shortcutDrafts[action])shortcutDrafts[action]=entry.accelerator;
+    shortcutMessage(action,shortcutNativeErrors[action],true);
+   }else if(oldNativeError&&!shortcutErrors[action])shortcutMessage(action,'');
+   renderShortcut(action);
+   changed=true;
+  }
+  if(changed)renderShortcutHint();
+ }
  function shortcutMessage(action,value,error=false){const status=$('shortcut-status-'+action);status.textContent=value;status.dataset.tone=error?'danger':'info';status.setAttribute('role',error?'alert':'status');}
  function shortcutGlobalMessage(value,error=false){const status=$('shortcutGlobalStatus');status.textContent=value;status.dataset.tone=error?'danger':'info';status.setAttribute('role',error?'alert':'status');}
- function renderShortcut(action){const saved=shortcutSaved[action],draft=shortcutDrafts[action],active=shortcutRecordingAction===action,input=document.querySelector('[data-shortcut-input='+action+']'),current=$('shortcut-current-'+action),record=document.querySelector('[data-shortcut-record='+action+']'),save=document.querySelector('[data-shortcut-save='+action+']'),restore=document.querySelector('[data-shortcut-default='+action+']');current.textContent=saved?normalizeShortcut(saved):'未设置';input.value=draft||'';input.placeholder=active?'按下组合键，Esc取消':'点击录入';record.disabled=shortcutBusy[action];record.setAttribute('aria-pressed',String(active));save.disabled=shortcutBusy[action]||!draft||draft===saved&&!shortcutErrors[action]&&!shortcutNativeErrors[action];restore.disabled=shortcutBusy[action];}
+ function renderShortcut(action){
+  const saved=shortcutSaved[action],draft=shortcutDrafts[action],active=shortcutRecordingAction===action,busy=shortcutBusy[action];
+  const input=document.querySelector('[data-shortcut-input='+action+']'),record=document.querySelector('[data-shortcut-record='+action+']');
+  $('shortcut-current-'+action).textContent=saved===null?'未绑定':saved?normalizeShortcut(saved):'读取中…';
+  input.value=draft||'';input.placeholder=active?'按下组合键，Esc取消':'点击录入';
+  record.disabled=busy;record.setAttribute('aria-pressed',String(active));
+  document.querySelector('[data-shortcut-save='+action+']').disabled=busy||!draft||draft===saved&&!shortcutErrors[action]&&!shortcutNativeErrors[action];
+  document.querySelector('[data-shortcut-default='+action+']').disabled=busy;
+  document.querySelector('[data-shortcut-unbind='+action+']').disabled=busy||!saved;
+ }
  function renderShortcuts(){for(const action of Object.keys(SHORTCUT_DEFINITIONS))renderShortcut(action);}
  function enqueueShortcut(run){const request=shortcutQueue.then(run);shortcutQueue=request.catch(()=>{});return request;}
  function stopShortcutRecording({cancelDraft=true,statusText='录入已取消'}={}){if(shortcutStopPromise)return shortcutStopPromise;const action=shortcutRecordingAction||shortcutRecordingPendingAction;if(!action&&!shortcutRecording)return Promise.resolve(true);const revision=++shortcutRecordingRevision;shortcutRecordingAction=null;shortcutRecordingPendingAction=null;if(action){if(cancelDraft){shortcutDrafts[action]=shortcutRecordingStartDraft;shortcutErrors[action]='';}renderShortcut(action);if(cancelDraft&&shortcutNativeErrors[action])shortcutMessage(action,shortcutNativeErrors[action],true);else if(cancelDraft&&statusText)shortcutMessage(action,statusText);}shortcutRecordingStartDraft='';shortcutRecording=false;const request=(async()=>{try{const r=await enqueueShortcut(()=>api.setShortcutRecording(false));if(revision!==shortcutRecordingRevision)return false;shortcutRecording=!!r?.recording;if(r?.shortcuts)syncShortcutStatus(r.shortcuts);if(!r?.ok||shortcutRecording)throw Error(r?.error||'快捷键录入未结束');if(!action)shortcutGlobalMessage('');return true;}catch(e){if(alive&&revision===shortcutRecordingRevision){const text='无法结束录入：'+e.message;if(action)shortcutMessage(action,text,true);else shortcutGlobalMessage(text,true);}return false;}})();shortcutStopPromise=request.finally(()=>{shortcutStopPromise=null;});return shortcutStopPromise;}
- async function startShortcutRecording(action){if(shortcutBusy[action]||shortcutRecordingAction===action||shortcutRecordingPendingAction===action)return;if(!await stopShortcutRecording())return;shortcutRecordingPendingAction=action;shortcutRecordingStartDraft=shortcutDrafts[action];shortcutErrors[action]='';const revision=++shortcutRecordingRevision;renderShortcut(action);shortcutMessage(action,'正在准备录入…');try{const r=await enqueueShortcut(()=>api.setShortcutRecording(true));if(!alive||revision!==shortcutRecordingRevision||shortcutRecordingPendingAction!==action)return;shortcutRecording=!!r?.recording;if(r?.shortcuts)syncShortcutStatus(r.shortcuts);if(!r?.ok||!shortcutRecording)throw Error(r?.error||'快捷键录入未启动');shortcutRecordingPendingAction=null;shortcutRecordingAction=action;renderShortcut(action);shortcutMessage(action,'按下 Ctrl 或 Alt 与另一个键；可加 Shift，Esc取消。');document.querySelector('[data-shortcut-input='+action+']').focus();}catch(e){if(alive&&revision===shortcutRecordingRevision){shortcutRecordingAction=null;shortcutRecordingPendingAction=null;shortcutRecordingStartDraft='';shortcutRecording=false;renderShortcut(action);shortcutMessage(action,'无法开始录入：'+e.message,true);}}}
+ async function startShortcutRecording(action){if(shortcutBusy[action]||shortcutRecordingAction===action||shortcutRecordingPendingAction===action)return;if(!await stopShortcutRecording()||shortcutBusy[action])return;shortcutRecordingPendingAction=action;shortcutRecordingStartDraft=shortcutDrafts[action];shortcutErrors[action]='';const revision=++shortcutRecordingRevision;renderShortcut(action);shortcutMessage(action,'正在准备录入…');try{const r=await enqueueShortcut(()=>api.setShortcutRecording(true));if(!alive||revision!==shortcutRecordingRevision||shortcutRecordingPendingAction!==action)return;shortcutRecording=!!r?.recording;if(r?.shortcuts)syncShortcutStatus(r.shortcuts);if(!r?.ok||!shortcutRecording)throw Error(r?.error||'快捷键录入未启动');shortcutRecordingPendingAction=null;shortcutRecordingAction=action;renderShortcut(action);shortcutMessage(action,'按下 Ctrl 或 Alt 与另一个键；可加 Shift，Esc取消。');document.querySelector('[data-shortcut-input='+action+']').focus();}catch(e){if(alive&&revision===shortcutRecordingRevision){shortcutRecordingAction=null;shortcutRecordingPendingAction=null;shortcutRecordingStartDraft='';shortcutRecording=false;renderShortcut(action);shortcutMessage(action,'无法开始录入：'+e.message,true);}}}
  async function loadShortcuts(){try{const r=await api.getShortcuts();if(!alive)return;if(!r?.ok)throw Error(r?.error||'快捷键读取失败');syncShortcutStatus(r.shortcuts);shortcutRecording=!!r.recording;renderShortcuts();shortcutGlobalMessage('');if(shortcutRecording){shortcutGlobalMessage('正在结束未完成的快捷键录入…');await stopShortcutRecording({cancelDraft:false,statusText:null});}}catch(e){if(alive){for(const action of Object.keys(SHORTCUT_DEFINITIONS))shortcutMessage(action,'读取失败：'+e.message,true);shortcutGlobalMessage('快捷键读取失败：'+e.message,true);}}}
- async function saveShortcut(action,requestedValue=null){if(shortcutBusy[action])return;if(!await stopShortcutRecording())return;const value=requestedValue||shortcutDrafts[action];if(!value)return;shortcutDrafts[action]=value;shortcutBusy[action]=true;renderShortcut(action);shortcutMessage(action,'正在保存…');try{const r=await enqueueShortcut(()=>api.setShortcut(action,value));if(!alive)return;if(r?.shortcuts)syncShortcutStatus(r.shortcuts);if(!r?.ok)throw Error(r?.error||'组合键注册失败');shortcutSaved[action]=r.accelerator||value;shortcutDrafts[action]='';shortcutErrors[action]='';shortcutNativeErrors[action]='';shortcutMessage(action,'已保存');renderShortcutHint();}catch(e){if(alive){shortcutErrors[action]=e.message;shortcutMessage(action,'保存失败：'+e.message,true);renderShortcutHint();}}finally{shortcutBusy[action]=false;if(alive)renderShortcut(action);}}
+ async function saveShortcut(action,value=shortcutDrafts[action]){
+  if(shortcutBusy[action]||value==='')return;
+  const unbind=value===null;
+  shortcutBusy[action]=true;
+  renderShortcut(action);
+  try{
+   const recordingHere=shortcutRecordingAction===action||shortcutRecordingPendingAction===action;
+   if((!unbind||recordingHere)&&!await stopShortcutRecording())return;
+   if(!unbind)shortcutDrafts[action]=value;
+   shortcutMessage(action,unbind?'正在取消绑定…':'正在保存…');
+   const result=await enqueueShortcut(()=>api.setShortcut(action,value));
+   if(!alive)return;
+   if(!result?.ok)throw Error(result?.error||'快捷键设置未完成');
+   shortcutDrafts[action]='';
+   shortcutErrors[action]='';
+   syncShortcutStatus({[action]:result});
+   shortcutMessage(action,unbind?'已释放组合键':'已保存');
+  }catch(e){
+   if(alive){
+    shortcutErrors[action]=e.message;
+    shortcutMessage(action,(unbind?'取消绑定失败：':'保存失败：')+e.message,true);
+   }
+  }finally{
+   shortcutBusy[action]=false;
+   if(alive)renderShortcut(action);
+  }
+ }
  function captureShortcutKey(action,e){const modifiers=e.ctrlKey||e.altKey||e.shiftKey||e.metaKey;if(e.key==='Tab'&&!modifiers)return;if(shortcutRecordingAction!==action){if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();void startShortcutRecording(action);}return;}e.preventDefault();e.stopPropagation();if(e.key==='Escape'){void stopShortcutRecording({cancelDraft:true,statusText:'已取消录入'});return;}if(e.metaKey||e.key==='Meta'){shortcutMessage(action,'此 Windows 版本不能绑定 Win 键；草稿未更改。',true);return;}if(['Control','Alt','Shift'].includes(e.key))return;if(!e.ctrlKey&&!e.altKey){shortcutMessage(action,'组合键需要 Ctrl 或 Alt，可加 Shift。',true);return;}const named={Space:'Space',ArrowUp:'Up',ArrowDown:'Down',ArrowLeft:'Left',ArrowRight:'Right',Backspace:'Backspace',Delete:'Delete',Enter:'Enter',Tab:'Tab',Home:'Home',End:'End',PageUp:'PageUp',PageDown:'PageDown',Insert:'Insert',' ':'Space'},key=/^Key[A-Z]$/.test(e.code)?e.code.slice(3):/^Digit[0-9]$/.test(e.code)?e.code.slice(5):/^F(?:[1-9]|1[0-9]|2[0-4])$/.test(e.key)?e.key:named[e.key]||named[e.code]||(/^[a-z0-9]$/i.test(e.key)?e.key.toUpperCase():null);if(!key){shortcutMessage(action,'无法识别此按键，请使用字母、数字、方向键或功能键。',true);return;}const value=[e.ctrlKey?'Control':null,e.altKey?'Alt':null,e.shiftKey?'Shift':null,key].filter(Boolean).join('+');shortcutDrafts[action]=value;shortcutErrors[action]='';renderShortcut(action);shortcutMessage(action,'待保存');void stopShortcutRecording({cancelDraft:false,statusText:null}).then(stopped=>{if(stopped&&alive)document.querySelector('[data-shortcut-save="'+action+'"]').focus();});}
- for(const action of Object.keys(SHORTCUT_DEFINITIONS)){const input=document.querySelector('[data-shortcut-input="'+action+'"]');input.onkeydown=e=>captureShortcutKey(action,e);input.onclick=()=>{if(shortcutRecordingAction!==action&&shortcutRecordingPendingAction!==action)void startShortcutRecording(action);};input.onblur=()=>{if(shortcutRecordingAction===action||shortcutRecordingPendingAction===action)void stopShortcutRecording({cancelDraft:true,statusText:'录入已结束'});};document.querySelector('[data-shortcut-record="'+action+'"]').onclick=()=>void startShortcutRecording(action);document.querySelector('[data-shortcut-save="'+action+'"]').onclick=()=>void saveShortcut(action);document.querySelector('[data-shortcut-default="'+action+'"]').onclick=()=>void saveShortcut(action,SHORTCUT_DEFINITIONS[action].accelerator);}
+ for(const action of Object.keys(SHORTCUT_DEFINITIONS)){const input=document.querySelector('[data-shortcut-input="'+action+'"]');input.onkeydown=e=>captureShortcutKey(action,e);input.onclick=()=>{if(shortcutRecordingAction!==action&&shortcutRecordingPendingAction!==action)void startShortcutRecording(action);};input.onblur=()=>{if(shortcutRecordingAction===action||shortcutRecordingPendingAction===action)void stopShortcutRecording({cancelDraft:true,statusText:'录入已结束'});};document.querySelector('[data-shortcut-record="'+action+'"]').onclick=()=>void startShortcutRecording(action);document.querySelector('[data-shortcut-save="'+action+'"]').onclick=()=>void saveShortcut(action);document.querySelector('[data-shortcut-default="'+action+'"]').onclick=()=>void saveShortcut(action,SHORTCUT_DEFINITIONS[action].accelerator);document.querySelector('[data-shortcut-unbind="'+action+'"]').onclick=()=>void saveShortcut(action,null);}
  async function resetGPeak(button){button.disabled=true;const status=$('gPeakResetStatus');try{const r=await host.resetGPeak();if(r?.ok===false)throw Error(r.error||'重置未完成');$('overviewResetG').textContent='重置本段G峰值';status.textContent='本段G峰值已重置';status.dataset.tone='success';$('overviewGStatus').textContent='本段G峰值已重置';$('overviewGStatus').dataset.tone='success';}catch(e){status.textContent='重置失败：'+e.message;status.dataset.tone='danger';$('overviewGStatus').textContent=status.textContent;$('overviewGStatus').dataset.tone='danger';}finally{button.disabled=false;}}
  $('overviewConnectionHelp').onclick=async()=>{if(await navigate('connections')){$('connectionHelp').open=true;$('connectionHelp').querySelector('summary').focus();}};$('overviewResetG').onclick=()=>resetGPeak($('overviewResetG'));$('propertyResetG').onclick=()=>resetGPeak($('propertyResetG'));
 

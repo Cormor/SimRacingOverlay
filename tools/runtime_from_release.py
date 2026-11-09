@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[1]
 archive=Path(sys.argv[1]); expected=sys.argv[2]
 rebuild_all='--rebuild-all' in sys.argv[3:]
 rebuild=rebuild_all or '--rebuild-native' in sys.argv[3:]
-compiled={'Bridge.cs','PhysicsTelemetry.cs','IRacingTelemetry.cs','TelemetryEventStream.cs','SimHubTelemetry.cs','NativeMotionTelemetry.cs','NativeUdpTelemetry.cs','TelemetrySourceSelection.cs','Launcher.cs','LifecyclePaths.cs'}
+compiled={'Bridge.cs','PhysicsTelemetry.cs','IRacingTelemetry.cs','TelemetryEventStream.cs','SimHubTelemetry.cs','NativeMotionTelemetry.cs','NativeUdpTelemetry.cs','TelemetrySourceSelection.cs','Launcher.cs','LifecyclePaths.cs','HudWindowLayer.cs'}
 reused={'SimHubPlugin.cs','led_tap.py','led_decoder.py','led-tap.js'}
 if hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()!=expected:
     raise SystemExit('Base release SHA256 mismatch')
@@ -18,14 +18,14 @@ with zipfile.ZipFile(archive) as z:
             # Git checkout applies .gitattributes CRLF to C#; only normalize line endings.
             if name not in z.namelist() or z.read(name).replace(b'\r\n',b'\n')!=p.read_bytes().replace(b'\r\n',b'\n'):
                 raise SystemExit('Runtime source changed; rebuild required: '+p.relative_to(root).as_posix())
-    allowed={'SimRacingBridge.exe','SimRacingLauncher.exe','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'}
+    allowed={'SimRacingBridge.exe','SimRacingLauncher.exe','SimRacingHudLayer.exe','SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'}
     count=0
     for info in z.infolist():
         if info.is_dir() or not info.filename.startswith(prefix+'runtime/'): continue
         rel=PurePosixPath(info.filename[len(prefix):])
         if '..' in rel.parts or rel.is_absolute(): raise SystemExit('Invalid runtime path')
         if rel.parts[1]!='electron' and rel.name not in allowed: continue
-        if rebuild and rel.name in {'SimRacingBridge.exe','SimRacingLauncher.exe'}:continue
+        if rebuild and rel.name in {'SimRacingBridge.exe','SimRacingLauncher.exe','SimRacingHudLayer.exe'}:continue
         if rebuild_all and rel.name in {'SimRacingOverlay.SimHub.dll','MozaLedObserver.exe'}:continue
         target=root/str(rel); target.parent.mkdir(parents=True,exist_ok=True)
         target.write_bytes(z.read(info));count+=1

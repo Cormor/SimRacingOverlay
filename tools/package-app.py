@@ -22,7 +22,7 @@ for directory in ('src','defaults','licenses','assets'):
 for name in ('Lifecycle.ps1','Discovery.ps1','Register-Obs.ps1','Register-SimHub.ps1','Install-App.ps1','Uninstall-App.ps1','package-components.cjs','package-hotfix.py'):
  source=root/'tools'/name
  if source.exists():copy(source,Path('tools')/name)
-for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','native-build.json'):
+for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','SimRacingHudLayer.exe','native-build.json'):
  copy(a.native/name,Path('runtime')/name)
 for name in ('SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'):
  copy(root/'runtime'/name,Path('runtime')/name)
