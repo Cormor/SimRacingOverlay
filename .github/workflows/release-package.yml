@@ -83,6 +83,7 @@ jobs:
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
           python tools/package-app.py --native runtime --output build/windows-app
+          if ($LASTEXITCODE -ne 0) { throw 'Application payload packaging failed.' }
           ./tools/build-installer.ps1 -Payload build/windows-app -OutputPath "dist/SimRacingOverlay-$version-Setup.exe" -ScratchPath build/installer
           $setup = Get-Item "dist/SimRacingOverlay-$version-Setup.exe"
           $hash = (Get-FileHash $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
