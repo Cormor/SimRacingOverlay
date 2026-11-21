@@ -13,6 +13,7 @@ using System.IO.MemoryMappedFiles;
 using SharpDX.DirectInput;
 
 class Bridge {
+ static readonly string profile=OverlayLifecyclePaths.ProfileDirectory();
  static readonly string root=Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,".."));
  static readonly object gate=new object();
  [ThreadStatic] static JavaScriptSerializer threadJson;
@@ -34,7 +35,7 @@ class Bridge {
  static double Clamp(double n,double a,double b){return Math.Max(a,Math.Min(b,n));}
  // Called on startup and by the file watcher, never by a frame consumer.
  static bool LoadConfig(){
-  var file=Path.Combine(root,"settings.json");
+  var file=Path.Combine(profile,"settings.json");
   try{
    lock(gate){
     if(!File.Exists(file))return true;
@@ -79,7 +80,7 @@ class Bridge {
    foreach(var pair in incoming)
     if(new[]{"inputs","steeringRange","buttonMap","visualProfile","ledObserver","simHubPort"}.Contains(pair.Key))next[pair.Key]=pair.Value;
 
-   var file=Path.Combine(root,"settings.json");
+   var file=Path.Combine(profile,"settings.json");
    var temp=file+"."+Guid.NewGuid().ToString("N")+".tmp";
    try{
     File.WriteAllText(temp,json.Serialize(next),new UTF8Encoding(false));
@@ -101,7 +102,7 @@ class Bridge {
   bool first;
   using(var mutex=new Mutex(true,"Local\\SimRacingOverlay_"+port,out first)){
    if(!first)return;
-   using(new WatchedFile(Path.Combine(root,"settings.json"),LoadConfig))
+   using(new WatchedFile(Path.Combine(profile,"settings.json"),LoadConfig))
    using(new WatchedFile(Path.Combine(root,"runtime","led-state.json"),LoadLed)){
     SimHubTelemetry.Start(()=>settings.SimHubPort);NativeUdpTelemetry.Start();
     new Thread(DiscoverControllers){IsBackground=true,Name="DirectInput discovery"}.Start();
@@ -349,7 +350,7 @@ class Bridge {
   }
   else if(method=="GET"&&url=="/api/settings"){data=Encoding.UTF8.GetBytes(json.Serialize(settings.Values));}
   else if(method=="POST"&&url=="/api/settings"){string t,origin;bool auth=headers.TryGetValue("X-Overlay-Token",out t)&&t==token;bool local=!headers.TryGetValue("Origin",out origin)||origin=="http://127.0.0.1:"+port||origin=="http://localhost:"+port;int length;if(!auth||!local){status="403 Forbidden";data=Encoding.UTF8.GetBytes("{}");}else if(!headers.ContainsKey("Content-Length")||!int.TryParse(headers["Content-Length"],out length)||length<2||length>65536){status="413 Payload Too Large";data=Encoding.UTF8.GetBytes("{}");}else{var body=new byte[length];int n=0,r;while(n<length&&(r=stream.Read(body,n,length-n))>0)n+=r;if(n!=length)return;try{var incoming=json.Deserialize<Dictionary<string,object>>(Encoding.UTF8.GetString(body));Validate(incoming);SaveConfig(incoming);data=Encoding.UTF8.GetBytes("{\"ok\":true}");}catch(Exception e){status="400 Bad Request";data=Encoding.UTF8.GetBytes(json.Serialize(new{error=e.Message}));}}}
-  else if(method=="GET"){var relative=Uri.UnescapeDataString(url).TrimStart('/');if(relative=="")relative="index.html";if(relative=="setup")relative="setup.html";var file=Path.GetFullPath(Path.Combine(root,relative));bool allowed=file.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)&&(file.EndsWith(".html")||file.EndsWith(".js")||file.EndsWith(".css")||file.EndsWith(".svg")||file.EndsWith(".png")||(file.EndsWith(".json")&&relative.StartsWith("assets/")));if(!allowed||!File.Exists(file)){status="404 Not Found";data=Encoding.UTF8.GetBytes("{}");}else{data=File.ReadAllBytes(file);type=file.EndsWith(".js")?"text/javascript":file.EndsWith(".css")?"text/css":file.EndsWith(".svg")?"image/svg+xml":file.EndsWith(".png")?"image/png":file.EndsWith(".json")?"application/json":"text/html; charset=utf-8";}}
+  else if(method=="GET"){var relative=Uri.UnescapeDataString(url).TrimStart('/');if(relative=="")relative="index.html";if(relative=="setup")relative="setup.html";var ext=Path.GetExtension(relative).ToLowerInvariant();var file=StaticFile(relative,ext);if(file==null){status="404 Not Found";data=Encoding.UTF8.GetBytes("{}");}else{data=File.ReadAllBytes(file);type=ext==".js"?"text/javascript":ext==".css"?"text/css":ext==".svg"?"image/svg+xml":ext==".png"?"image/png":ext==".json"?"application/json":"text/html; charset=utf-8";}}
   else{status="405 Method Not Allowed";data=Encoding.UTF8.GetBytes("{}");}
   var clockHeaders=method=="GET"&&(url=="/state"||url=="/clock")?
    "X-Overlay-Clock-Ms: "+ClockMs().ToString("R",CultureInfo.InvariantCulture)+"\r\nX-Overlay-Clock-Epoch: "+hardwareEpoch+"\r\n":"";
@@ -357,6 +358,25 @@ class Bridge {
  }}catch{}}
 
  const int HardwareValidForMs=100;
+ static string StaticFile(string relative,string ext) {
+  string[] parts=relative.Split('/');
+  if(parts.Any(p=>p.Length==0||p.TrimEnd('.', ' ')!=p||p.IndexOfAny(Path.GetInvalidFileNameChars())>=0||p.Contains("\\")))return null;
+  bool assets=parts[0].Equals("assets",StringComparison.OrdinalIgnoreCase);
+  bool configured=assets&&parts.Length>1&&(
+   parts.Length==2&&parts[1].Equals("layout.json",StringComparison.OrdinalIgnoreCase)||
+   parts[1].Equals("wheel-packs",StringComparison.OrdinalIgnoreCase)||
+   parts[1].Equals("modules",StringComparison.OrdinalIgnoreCase)||
+   parts[1].Equals("components",StringComparison.OrdinalIgnoreCase));
+  if(!new[]{".html",".js",".css",".svg",".png"}.Contains(ext)&&!(assets&&ext==".json"))return null;
+  string file=Path.Combine(configured?profile:root,Path.Combine(parts));
+  if(!File.Exists(file))return null;
+  if(configured) {
+   for(string part=file;!String.IsNullOrEmpty(part);part=Path.GetDirectoryName(part)){
+    if((File.GetAttributes(part)&FileAttributes.ReparsePoint)!=0)return null;
+   }
+  }
+  return file;
+ }
  static readonly string hardwareEpoch=Guid.NewGuid().ToString("N");
  static readonly Controller[] NoControllers=new Controller[0];
  static readonly DeviceSample[] NoSamples=new DeviceSample[0];

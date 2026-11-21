@@ -8,14 +8,11 @@ $ready=$false
 try {
  New-Item -ItemType Directory -Force (Join-Path $root 'runtime')|Out-Null
  if(Test-Path -LiteralPath (Join-Path $root 'runtime\installing.json')){throw 'An overlay update has not finished. Complete that installation before starting.'}
- $paused=Join-Path $root 'runtime\autostart.paused'
+ $dataRoot=Initialize-OverlayProfile $root @($root)
+ $paused=Join-Path $dataRoot 'runtime\autostart.paused'
  if(($FromSimHub -or $FromHost) -and (Test-Path -LiteralPath $paused)){@{ok=$true;state='paused';root=$root}|ConvertTo-Json -Compress;return}
  if(!$FromSimHub -and !$FromHost -and (Test-Path -LiteralPath $paused)){Remove-Item -LiteralPath $paused}
- foreach($pair in @(@('settings.json','settings.json'),@('runtime\desktop.json','desktop.json'),@('assets\layout.json','layout.json'))) {
-  $dest=Join-Path $root $pair[0]
-  if(!(Test-Path -LiteralPath $dest)){Copy-Item -LiteralPath (Join-Path $root ('defaults\'+$pair[1])) -Destination $dest}
- }
- $cfg=Read-OverlaySettings $root;$port=[int]$cfg.httpPort
+ $cfg=Read-OverlaySettings $dataRoot;$port=[int]$cfg.httpPort
  $bridge=Join-Path $root 'runtime\SimRacingBridge.exe';$existing=@(Get-OverlayProcesses $root 'bridge')
  $listeners=@(Get-OverlayListener $port);$ownedPids=@($existing.ProcessId)
  if(@($listeners|Where-Object {$_.OwningProcess -notin $ownedPids}).Count){throw "Port $port belongs to another process. Change the port explicitly or stop that process; settings were kept."}

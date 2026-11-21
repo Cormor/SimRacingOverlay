@@ -5,15 +5,17 @@ local legacy_name='MOZA CS Pro 实时方向盘'
 local function browser_source()
  return obs.obs_get_source_by_name(name) or obs.obs_get_source_by_name(legacy_name)
 end
-local function read_json(file)
- local f=io.open(root..file,'r');if not f then return nil end
+local function read_json(file, directory)
+ local f=io.open((directory or root)..file,'r');if not f then return nil end
  local data=obs.obs_data_create_from_json(f:read('*a'));f:close();return data
 end
 local function url(port)
  return 'http://127.0.0.1:'..port..'/'
 end
 local function initial_url()
- local cfg=read_json('settings.json');local port=18764
+ local profile=os.getenv('USERPROFILE')
+ local cfg=profile and read_json('settings.json',profile..'/.lixing/SimRacingOverlay/') or read_json('settings.json')
+ local port=18764
  if cfg then local configured=obs.obs_data_get_int(cfg,'httpPort');if configured>0 and configured<=65535 then port=configured end;obs.obs_data_release(cfg) end
  return url(port)
 end

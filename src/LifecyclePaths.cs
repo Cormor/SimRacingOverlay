@@ -8,6 +8,11 @@ using Microsoft.Win32.SafeHandles;
 // Windows installation identity: resolve directory junctions before comparing
 // our executable, script or integration paths. Also handles a new destination.
 public static class OverlayLifecyclePaths {
+ public static string ProfileDirectory() {
+  string profile=Environment.GetEnvironmentVariable("USERPROFILE");
+  if(String.IsNullOrWhiteSpace(profile)||!Path.IsPathRooted(profile))throw new InvalidOperationException("A Windows user profile is required.");
+  return Path.Combine(profile,".lixing","SimRacingOverlay");
+ }
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]
  static extern SafeFileHandle CreateFile(string path,uint access,uint share,IntPtr security,uint creation,uint flags,IntPtr template);
  [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]

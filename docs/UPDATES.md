@@ -2,9 +2,9 @@
 
 管理窗的“版本与更新”页可检查正式版本、下载完整更新或 hotfix、导入本地盘面和算法包。检查只更新页面状态和托盘右上角的更新标记，不自动安装、不弹通知窗口。后台启动 15 秒后检查，此后每 6 小时检查；页面也可主动检查。
 
-正式来源固定为 [Cormor/SimRacingOverlay Releases](https://github.com/Cormor/SimRacingOverlay/releases)。预发布和草稿不参与版本提醒。下载通过 Electron 的系统代理通道。客户端从公开 Release 信息取得资产编号，经固定仓库的官方资产 API 下载清单、完整包和 hotfix；此公开接口无需用户提供 token 或 key。每项资产仍须符合本次 Release 的 tag 和文件名，API 下载以 `Accept: application/octet-stream` 接收文件或其官方重定向；不依赖 `github.com` 的浏览器下载入口。完整包、hotfix 和清单必须来自同一 Release；每项资产按清单 SHA-256 检查，重定向仅接受 GitHub 的 Release 资产服务。此哈希保证下载与该仓库发布清单一致，不能当作第三方作者签名。
+正式来源固定为 [Cormor/SimRacingOverlay Releases](https://github.com/Cormor/SimRacingOverlay/releases)。更新服务复用随源码固定的砺行公共组件，沿 Electron 的系统代理通道访问官方资产 API。应用在下载更新前，使用内置公证书检查 `lixing-update-manifest.json` 与 `lixing-update-manifest.sig`，并核对应用、仓库、版本、平台、架构及渠道。完整安装和热更新在应用前再次核对签名和实际资产摘要。托盘只标记已验证的可用版本。发布页入口继续显示普通 GitHub 发布项。已启用的算法与组件保存在本地扩展目录，由当前 Windows 用户权限管理。
 
-更新清单 schema 1 的可选 `releaseNotes: [{version, notes}]` 由仓库 `CHANGELOG.md` 生成。发现新版本时，客户端按实际完整安装版本筛选 `(当前版本, 目标版本]` 的各版日志，并从旧到新分组显示；例如从 1.4.0 升级到 1.6.3，会依次列出该区间内的改动。历史日志缺失或格式异常时，页面保留最新版本说明并提示历史未能读取，仍可检查版本和安装有效更新。已安装当前版本时继续显示该版说明。检查确认本机与最新正式版本一致时显示“已是最新”，本机高于公开版本时显示“无需更新”；安装完成回执保留在诊断记录中，不在页面重复播报版本与重启过程。
+已签清单的 `releaseNotes` 取自仓库 `CHANGELOG.md`。更新页从旧到新显示实际完整安装版本至目标版本之间的记录。发布信息或签名缺失时，可查看 GitHub 发布页，应用内下载和安装不可用。
 
 ## 完整更新
 
@@ -57,16 +57,19 @@ python tools/package-hotfix.py --base-version 1.5.0 --version 1.5.1 --files stee
 
 ## 发布者资产
 
-常规 Windows 打包工作流会在 Setup 生成后产生 `update-manifest.json`，并与 Setup 一起上传到既有草稿 Release。可选 workflow 输入 `hotfix_base` 会将当前算法打成适配该精确完整版本的 hotfix；发布者应先确认未修改模块接口。留空只发布完整更新元数据。
-
-手动生成清单：
+Windows 打包工作流使用精确发布源码构建 Setup，在对应草稿 Release 上传同一组发布资产的两份清单。旧版客户端沿用 schema 1 的 `update-manifest.json`，首次跨到当前签名更新。新版只消费单独命名的 `lixing-update-manifest.json` 及其签名。可选输入 `hotfix_base` 生成一个适配精确基础版本的旧格式算法包；也可以用 `--hotfix` 指定实际盘面或组件 JSON。
 
 ```text
-python tools/package-hotfix.py --setup dist/SimRacingOverlay-1.5.1-Setup.exe --version 1.5.1 --output dist/update-manifest.json
-python tools/package-hotfix.py --setup dist/SimRacingOverlay-1.5.1-Setup.exe --version 1.5.1 --hotfix patch.hotfix.json --output dist/update-manifest.json
+python tools/package-hotfix.py --setup dist/SimRacingOverlay-<version>-Setup.exe --output dist/update-manifest.json --lixing-output dist/lixing-update-manifest.json
 ```
 
-`--hotfix` 同时接受现行盘面 JSON，自动输出 `kind: wheel`。hotfix、Setup 与清单必须作为同一正式 Release 的资产发布。不得为了检查更新功能创建公开假版本。
+草稿阶段，从同一 Release 下载新清单和清单列出的所有文件（Setup、便携包、校验文件、盘面、过渡清单及适用的热更新）。核对仓库、版本、渠道、平台和架构，并比较每项实际文件的大小及 SHA-256。然后在持有发布证书私钥的 Windows 账户下签署原始清单文件，上传 `lixing-update-manifest.sig`，读回两份签名资产和对应安装包再公开该 Release。签署和任何待签资产替换均在草稿中完成。私钥留在本机证书存储。
+
+```powershell
+./tools/vendor/update/sign-release.ps1 -Certificate ./tools/vendor/update/release-certificate.cer -Manifest ./dist/lixing-update-manifest.json
+```
+
+首次安装可从可信渠道取得砺行发行证书，核对证书文件的 SHA-256 为 `18433d307b60c6962508c20e35e36206851bf69e2683a24fa43b2ec689ae69ca`。使用该证书验证发布清单的 RSA-SHA256 分离签名，再核对同一清单中列出的 Setup 大小和 SHA-256。开发者可在发布源码中用固定公共组件的 `verifyManifest` 校验签名与发布身份。更新相关下载缓存位于用户配置目录的 `runtime/updates/`，安装回执仍由执行安装的程序目录保存。
 
 ## 组件、算法、表现、动画与主题扩展
 
@@ -74,4 +77,4 @@ python tools/package-hotfix.py --setup dist/SimRacingOverlay-1.5.1-Setup.exe --v
 
 组件包及活动选择保存于 `assets/components/`。完整升级保留这些文件和选择；API 或能力组合不兼容时，组件页面给出明确错误，由用户调整兼容组合或恢复内置组件。更新页“恢复内置”同时恢复传统算法与组件；包文件保留。“组件”页的选择应用只刷新组件/HUD，并保留管理窗草稿。
 
-官方 Release 可将组件包作为 hotfix，清单中为 `hotfix: {name, sha256, kind: "components", moduleVersion}`；`moduleVersion` 对应组件包自身版本，组件包的 API 和定义能力负责兼容性。发布者仍可用 `tools/package-hotfix.py --setup ... --hotfix <组件包.json> --output dist/update-manifest.json` 生成清单，并与包一起上传到同一 Release。
+官方 Release 可将组件包作为 hotfix，清单中为 `hotfix: {name, sha256, kind: "components", moduleVersion}`；`moduleVersion` 对应组件包自身版本，组件包的 API 和定义能力负责兼容性。发布者可在生成发布清单时用 `--hotfix <组件包.json>` 将其纳入当前 Release，随发布清单一同签名。

@@ -20,8 +20,10 @@ foreach($item in $payload){
 # Resolve integrations and settings before changing the installation.
 $sim=Find-Application 'SimHub' $SimHubPath;$obs=Find-Application 'OBS' $ObsPath
 $integration=[ordered]@{root=$destination;simHubExe=$sim;obsExe=$obs;obsConfig=(Get-ObsConfig $obs $ObsConfig);simHubState='not-found';obsState='not-found'}
-$settingsFile=Join-Path $destination 'settings.json'
-if(Test-Path -LiteralPath $settingsFile){$settings=Read-OverlaySettings $destination}else{$settings=Read-OverlaySettings (Join-Path $source 'defaults')}
+$dataRoot=[OverlayLifecyclePaths]::ProfileDirectory()
+$settingsDirectory=if(Test-Path -LiteralPath (Join-Path $dataRoot 'settings.json')){$dataRoot}else{$destination}
+$settingsFile=Join-Path $settingsDirectory 'settings.json'
+if(Test-Path -LiteralPath $settingsFile){$settings=Read-OverlaySettings $settingsDirectory}else{$settings=Read-OverlaySettings (Join-Path $source 'defaults')}
 if(!$NoLaunch){$ownedPids=@((Get-OverlayProcesses $destination 'bridge').ProcessId);if(@(Get-OverlayListener ([int]$settings.httpPort)|Where-Object {$_.OwningProcess -notin $ownedPids}).Count){throw 'The configured HTTP port belongs to another process. Choose the port explicitly before installation.'}}
 if($sim){
  $existingPlugin=Join-Path (Split-Path $sim) 'SimRacingOverlay.SimHub.dll'
@@ -74,8 +76,8 @@ try {
   Copy-OverlayProgramFile $manifestFile (Join-Path $destination 'PAYLOAD.json')
  }
  Stop-OverlayPendingStarts $destination
- foreach($pair in @(@('settings.json','settings.json'),@('runtime\desktop.json','desktop.json'),@('assets\layout.json','layout.json'))){$target=Join-Path $destination $pair[0];if(!(Test-Path -LiteralPath $target)){Copy-Item -LiteralPath (Join-Path $destination ('defaults\'+$pair[1])) -Destination $target}}
- Write-OverlayJson (Join-Path $destination 'runtime\integration.json') $integration
+ $dataRoot=Initialize-OverlayProfile $destination @($destination)
+ Write-OverlayJson (Join-Path $dataRoot 'runtime\integration.json') $integration
  # A complete package may run even if an optional external integration needs attention.
  Remove-Item -LiteralPath $installing;$committed=$true
  if($sim){
@@ -88,7 +90,7 @@ try {
   }catch{$integration.simHubState='failed';$failures.Add('SimHub: '+$_.Exception.Message)}
  }
  if($obs){try{$registration=& (Join-Path $destination 'tools\Register-Obs.ps1') -Root $destination -ConfigPath $integration.obsConfig|ConvertFrom-Json;$integration.obsState=$registration.state}catch{$integration.obsState='failed';$failures.Add('OBS: '+$_.Exception.Message)}}
- Write-OverlayJson (Join-Path $destination 'runtime\integration.json') $integration
+ Write-OverlayJson (Join-Path $dataRoot 'runtime\integration.json') $integration
  $watcher=Join-Path $destination 'runtime\SimRacingLauncher.exe';$run='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
  if(!$NoAutostart){New-Item -Path $run -Force|Out-Null;Set-ItemProperty -Path $run -Name SimRacingOverlay -Value ('"'+$watcher+'" --watch --root "'+$destination+'"')}
  else{$entry=(Get-ItemProperty -Path $run -ErrorAction SilentlyContinue).SimRacingOverlay;if($entry -and (Test-OverlayLauncherEntry $entry $destination)){Remove-ItemProperty -Path $run -Name SimRacingOverlay}}
@@ -98,7 +100,7 @@ try {
    $link=$shell.CreateShortcut((Join-Path $menu ($entry[0]+'.lnk')));$link.TargetPath=$entry[1];$link.Arguments=$entry[2];$link.WorkingDirectory=$destination;$link.Save()
   }
  }
- if($NoLaunch){Write-OverlayJson (Join-Path $destination 'runtime\autostart.paused') @{paused=$true}}
+ if($NoLaunch){Write-OverlayJson (Join-Path $dataRoot 'runtime\autostart.paused') @{paused=$true}}
  else{& (Join-Path $destination 'Setup.ps1');if(!$NoAutostart){Start-Process -FilePath $watcher -ArgumentList @('--watch','--root',('"'+$destination+'"')) -WorkingDirectory $destination}}
  Write-Output ('Installed: '+$destination)
  Write-Output ('SimHub: '+$integration.simHubState+'; OBS: '+$integration.obsState)

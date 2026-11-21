@@ -8,7 +8,7 @@ try {
  $registrationLock=[Threading.Mutex]::new($false,'Local\SimRacingOverlay.ObsRegistration')
  try{$owned=$registrationLock.WaitOne(30000)}catch [Threading.AbandonedMutexException]{$owned=$true}
  if(!$owned){throw 'Another OBS registration is still in progress.'}
- $cfg=Get-Content -LiteralPath (Join-Path $Root 'runtime\integration.json') -Raw|ConvertFrom-Json
+ $cfg=Get-Content -LiteralPath (Join-Path ([OverlayLifecyclePaths]::ProfileDirectory()) 'runtime\integration.json') -Raw|ConvertFrom-Json
  if(!$ConfigPath){$ConfigPath=Get-ObsConfig $cfg.obsExe $cfg.obsConfig}
  $ConfigPath=[OverlayLifecyclePaths]::Canonical($ConfigPath)
  $pending=Join-Path $Root 'runtime\obs-registration.pending'

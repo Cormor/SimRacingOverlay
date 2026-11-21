@@ -1,0 +1,12 @@
+{
+  "component": "LixingComponents/update",
+  "baseCommit": "bb8872c6e6266a211be87ae0b0d038739a2f4e7d",
+  "files": {
+    "build-manifest.cjs": "87d5163dc82a6bb52c5a1f6148ec0669fbbbab87939a6788e8cbdf133eb36d3b",
+    "config.cjs": "2564392119d581cc9be2decfd85cc363f84d794e597eff4e0a7ff8a6ad406fa1",
+    "lixing-update.cjs": "1eff0ac405f6f6b7b7515e0bdfa35a2f6de25d5e65ce0f05310a52d727fc7df4",
+    "release-certificate.cer": "18433d307b60c6962508c20e35e36206851bf69e2683a24fa43b2ec689ae69ca",
+    "sign-release.ps1": "838823253219ba7330a30777d6225e104e488b98740d7103275ed7e8c934fdfc"
+  },
+  "version": "1.0.2"
+}

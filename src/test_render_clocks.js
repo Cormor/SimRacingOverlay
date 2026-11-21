@@ -42,7 +42,7 @@ function fixture(repo){
    const observed=(sequence,value,at)=>f.run('observeHardware('+JSON.stringify({epoch:'fixture',sequence,validForMs:100})+','+JSON.stringify({steering:{state:'valid',value,ageMs:0}})+','+at+')');
    observed(1000,0,3000);observed(1001,90,3020);assert.equal(f.run('steeringAt(3030)'),90,'the newest measured angle is shown immediately');
    observed(1002,-90,3030);assert.equal(f.run('steeringAt(3035)'),-90,'reversal has no visual filter or overshoot');
-   observed(1003,20,3200);assert.equal(f.run('steeringAt(3200)'),20);assert.equal(f.run('steeringAt(3301)'),0,'expired hardware does not return through an older full snapshot');
+   observed(1003,20,3200);assert.equal(f.run('steeringAt(3200)'),20);assert.equal(f.run("hardwareValue('steering',3301)"),null);assert.equal(f.run('steeringAt(3301)'),20,'display holds while the hardware sample remains expired');assert.equal(f.run('steeringAt(4200)'),0,'display returns to neutral after one second');
    f.setNow(3301);
   }else{
    assert.equal(f.run('visualSteering.at=null;observeSteering({connected:true,angle:0},3000);observeSteering({connected:true,angle:90},3020);steeringAt(3030)'),45);
@@ -58,9 +58,9 @@ function fixture(repo){
    assert.equal(f.scope.overlayDiagnostics.getWheelFace().photo.builds,layer.photo.builds,'fast angle reuses the static photo layer');
    assert.equal(f.scope.overlayDiagnostics.getWheelFace().lights.builds,layer.lights.builds,'fast angle reuses the light layer');
    assert.equal(f.counts().models,models);assert.equal(f.counts().prepares,prepares,'fast display neither advances the algorithm nor prepares a new scene');
-   f.setNow(3501);f.paint();assert.equal(f.scope.overlayDiagnostics.getDisplay().angle,null);assert.equal(f.scope.overlayDiagnostics.getDisplay().pose,0);
+   f.setNow(3501);f.paint();assert.equal(f.scope.overlayDiagnostics.getDisplay().angle,63);assert.equal(f.scope.overlayDiagnostics.getDisplay().pose,63);
    f.setNow(3502);f.run("observeHardware({epoch:'fixture',sequence:1101,validForMs:100},{steering:{state:'valid',value:0,ageMs:0}},3502)");f.paint();
-   assert.equal(f.scope.overlayDiagnostics.getDisplay().angle,0,'valid zero repaints after an unknown neutral pose');
+   assert.equal(f.scope.overlayDiagnostics.getDisplay().angle,0,'valid zero repaints immediately after a brief gap');
   }
   assert.equal(JSON.stringify(f.scope.window.overlayDiagnostics.getState()),raw,'presentation never rewrites raw telemetry');
 

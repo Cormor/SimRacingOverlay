@@ -227,7 +227,7 @@ internal static class AppInstaller
                     try {
                         await Task.Run(delegate { return Execute(destination, migration, uninstall); });
                         if (restart) Restart(destination);
-                        status.Text = uninstall ? "卸载完成。用户数据保留在原安装目录。" : restart ? "安装完成，正在打开 SimRacingOverlay…" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
+                        status.Text = uninstall ? "卸载完成。用户数据保留在 %USERPROFILE%\\.lixing\\SimRacingOverlay。" : restart ? "安装完成，正在打开 SimRacingOverlay…" : "安装完成。可从开始菜单打开 SimRacingOverlay。";
                         close.Text = "完成";
                     } catch (Exception error) {
                         status.Text = "操作未完成。";

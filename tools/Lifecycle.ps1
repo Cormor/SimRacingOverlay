@@ -31,6 +31,25 @@ function Get-OverlayProcesses([string]$Root,[string]$Kind) {
   } catch [IO.FileNotFoundException] { } catch [IO.DirectoryNotFoundException] { }
  }
 }
+function Initialize-OverlayProfile([string]$ProgramRoot,[string[]]$LegacyRoots) {
+ $start=[Diagnostics.ProcessStartInfo]::new()
+ $start.FileName=Join-Path $ProgramRoot 'runtime\electron\electron.exe'
+ $script=Join-Path $ProgramRoot 'desktop-config.cjs'
+ $arguments=@($script,$ProgramRoot)+@($LegacyRoots)
+ $start.Arguments=($arguments|ForEach-Object {'"'+[IO.Path]::GetFullPath($_).TrimEnd('\')+'"'}) -join ' '
+ $start.WorkingDirectory=$ProgramRoot
+ $start.UseShellExecute=$false;$start.CreateNoWindow=$true
+ $start.RedirectStandardOutput=$true;$start.RedirectStandardError=$true
+ $start.EnvironmentVariables['ELECTRON_RUN_AS_NODE']='1'
+ $process=[Diagnostics.Process]::Start($start)
+ try{
+  $output=$process.StandardOutput.ReadToEndAsync();$errorText=$process.StandardError.ReadToEndAsync()
+  $process.WaitForExit()
+  if($process.ExitCode -ne 0){throw ('Configuration migration failed: '+$errorText.GetAwaiter().GetResult())}
+  $null=$output.GetAwaiter().GetResult()
+ }finally{$process.Dispose()}
+ return [OverlayLifecyclePaths]::ProfileDirectory()
+}
 function Read-OverlaySettings([string]$Root) {
  $cfg=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $Root 'settings.json') -Raw|ConvertFrom-Json
  $port=0
@@ -97,7 +116,11 @@ function Stop-OverlayDesktop([string]$Root) {
 }
 function Stop-OverlayRuntime([string]$Root,[switch]$Pause) {
  Stop-OverlayDesktop $Root
- if($Pause){Write-OverlayJson (Join-Path $Root 'runtime\autostart.paused') @{paused=$true}}
+ if($Pause){
+  $profileRuntime=Join-Path ([OverlayLifecyclePaths]::ProfileDirectory()) 'runtime'
+  New-Item -ItemType Directory -Force -Path $profileRuntime | Out-Null
+  Write-OverlayJson (Join-Path $profileRuntime 'autostart.paused') @{paused=$true}
+ }
  foreach($kind in @('bridge','observer')) {
   foreach($item in @(Get-OverlayProcesses $Root $kind)) {
    try{$process=[Diagnostics.Process]::GetProcessById($item.ProcessId)}catch [ArgumentException]{continue}

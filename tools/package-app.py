@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stage the Windows application without development material or user state."""
-import argparse,json,shutil
+import argparse,hashlib,json,shutil
 from pathlib import Path
 p=argparse.ArgumentParser()
 p.add_argument('--output',type=Path,required=True)
@@ -9,7 +9,7 @@ a=p.parse_args();root=Path(__file__).resolve().parents[1];out=a.output
 out.mkdir(parents=True,exist_ok=False)
 def copy(source,relative):
  target=out/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source,target)
-for pattern in ('*.js','*.css','*.html','*.lua','*.ps1','*.cmd','VERSION','LICENSE'):
+for pattern in ('*.js','*.cjs','*.css','*.html','*.lua','*.ps1','*.cmd','VERSION','LICENSE'):
  for source in root.glob(pattern):
   if source.name not in ('Install.ps1','Install.cmd','Uninstall.ps1'):copy(source,source.name)
 for directory in ('src','defaults','licenses','assets'):
@@ -22,6 +22,14 @@ for directory in ('src','defaults','licenses','assets'):
 for name in ('Lifecycle.ps1','Discovery.ps1','Register-Obs.ps1','Register-SimHub.ps1','Install-App.ps1','Uninstall-App.ps1','package-components.cjs','package-hotfix.py'):
  source=root/'tools'/name
  if source.exists():copy(source,Path('tools')/name)
+vendor=Path('tools/vendor/update')
+vendor_lock=json.loads((root/vendor/'SOURCE.json').read_text(encoding='utf-8'))
+for name in ('lixing-update.cjs','config.cjs','release-certificate.cer'):
+ relative=vendor/name
+ if hashlib.sha256((root/relative).read_bytes()).hexdigest()!=vendor_lock['files'][name]:
+  raise RuntimeError('Shared update component hash mismatch: '+name)
+ copy(root/relative,relative)
+copy(root/vendor/'SOURCE.json',vendor/'SOURCE.json')
 for name in ('SimRacingBridge.exe','SimRacingLauncher.exe','OverlayLifecycle.dll','SimRacingHudLayer.exe','native-build.json'):
  copy(a.native/name,Path('runtime')/name)
 for name in ('SimRacingOverlay.SimHub.dll','MozaLedObserver.exe','SharpDX.dll','SharpDX.DirectInput.dll'):

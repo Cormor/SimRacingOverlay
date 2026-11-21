@@ -4,7 +4,7 @@ $root=Split-Path $PSScriptRoot
 if(!$OutputPath){$OutputPath=Join-Path $root 'runtime'}
 New-Item -ItemType Directory -Force $OutputPath | Out-Null
 $csc=Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
-& $csc /nologo /optimize+ /target:exe /platform:x86 "/out:$OutputPath\SimRacingBridge.exe" /reference:System.Web.Extensions.dll "/reference:$root\runtime\SharpDX.dll" "/reference:$root\runtime\SharpDX.DirectInput.dll" "$root\src\Bridge.cs" "$root\src\PhysicsTelemetry.cs" "$root\src\IRacingTelemetry.cs" "$root\src\TelemetryEventStream.cs" "$root\src\SimHubTelemetry.cs" "$root\src\NativeMotionTelemetry.cs" "$root\src\NativeUdpTelemetry.cs" "$root\src\TelemetrySourceSelection.cs"
+& $csc /nologo /optimize+ /target:exe /platform:x86 "/out:$OutputPath\SimRacingBridge.exe" /reference:System.Web.Extensions.dll /reference:System.Management.dll "/reference:$root\runtime\SharpDX.dll" "/reference:$root\runtime\SharpDX.DirectInput.dll" "$root\src\Bridge.cs" "$root\src\LifecyclePaths.cs" "$root\src\PhysicsTelemetry.cs" "$root\src\IRacingTelemetry.cs" "$root\src\TelemetryEventStream.cs" "$root\src\SimHubTelemetry.cs" "$root\src\NativeMotionTelemetry.cs" "$root\src\NativeUdpTelemetry.cs" "$root\src\TelemetrySourceSelection.cs"
 if($LASTEXITCODE -ne 0){throw 'Bridge compilation failed.'}
 & $csc /nologo /optimize+ /target:winexe /platform:anycpu "/win32icon:$root\assets\app.ico" "/out:$OutputPath\SimRacingLauncher.exe" /reference:System.Web.Extensions.dll /reference:System.Management.dll /reference:System.Windows.Forms.dll "$root\src\Launcher.cs" "$root\src\LifecyclePaths.cs"
 if($LASTEXITCODE -ne 0){throw 'Launcher compilation failed.'}
