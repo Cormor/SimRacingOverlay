@@ -4,3 +4,6 @@
 *.cs text eol=crlf
 # Catalog digests bind the published wheel JSON bytes across platforms.
 wheel-packs/**/*.json text eol=lf
+# The upstream update component is pinned by byte-level SHA-256 digests.
+tools/vendor/update/** text eol=lf
+tools/vendor/update/*.cer -text
