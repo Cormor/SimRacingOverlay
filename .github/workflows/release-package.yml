@@ -58,6 +58,8 @@ jobs:
           ./tools/build.ps1 -SimHubPath (Join-Path $pwd 'build/simhub-sdk') -BuildObserver
       - name: Verify layout and algorithms
         run: |
+          node src/test_profile_migration.cjs
+          if ($LASTEXITCODE -ne 0) { throw "Node check failed: src/test_profile_migration.cjs" }
           node src/test_wheel_profiles.js
           if ($LASTEXITCODE -ne 0) { throw "Node check failed: src/test_wheel_profiles.js" }
           node src/test_wheel_store.js
@@ -90,7 +92,7 @@ jobs:
           HOTFIX_BASE: ${{ inputs.hotfix_base }}
         run: |
           $version = (Get-Content VERSION -Raw).Trim()
-          $metadataArguments = @('tools/package-hotfix.py','--setup',"dist/SimRacingOverlay-$version-Setup.exe",'--output','dist/update-manifest.json')
+          $metadataArguments = @('tools/package-hotfix.py','--setup',"dist/SimRacingOverlay-$version-Setup.exe",'--output','dist/update-manifest.json','--lixing-output','dist/lixing-update-manifest.json','--release-assets','dist')
           if ($env:HOTFIX_BASE) {
             $hotfix = "dist/SimRacingOverlay-$version.hotfix.json"
             python tools/package-hotfix.py --base-version $env:HOTFIX_BASE --output $hotfix
@@ -99,7 +101,8 @@ jobs:
           }
           python @metadataArguments
           if ($LASTEXITCODE -ne 0) { throw 'Update metadata generation failed.' }
-      - name: Upload complete package to draft release
+          Copy-Item tools/vendor/update/release-certificate.cer dist/release-certificate.cer
+      - name: Upload package and manifests to draft for local signing
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ inputs.release_id }}

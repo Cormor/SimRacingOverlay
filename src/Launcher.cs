@@ -22,6 +22,7 @@ class Launcher {
  static Dictionary<string,object> Read(string file){return new JavaScriptSerializer().Deserialize<Dictionary<string,object>>(File.ReadAllText(file));}
  static object Field(Dictionary<string,object> data,string name){object value;return data!=null&&data.TryGetValue(name,out value)?value:null;}
  static string Text(Dictionary<string,object> data,string name){return Convert.ToString(Field(data,name));}
+ static string Profile(string name){return Path.Combine(OverlayLifecyclePaths.ProfileDirectory(),name);}
  static string Runtime(string name){return Path.Combine(root,"runtime",name);}
  static void Status(string state,string error=null) {
   lock(statusGate)try{
@@ -50,8 +51,9 @@ class Launcher {
  }
  static void WatchOwnFiles() {
   foreach(var watcher in files)watcher.Dispose();files.Clear();
-  Watch(root,name=>{if(name=="settings.json")Changed(true);});
-  Watch(Runtime(""),name=>{if(name=="autostart.paused")Changed(true);else if(name=="installing.json"||name=="lifecycle-state.json"||name=="integration.json"||name=="obs-registration.pending")Changed(false);});
+  Watch(Profile(""),name=>{if(name=="settings.json")Changed(true);});
+  Watch(Profile("runtime"),name=>{if(name=="autostart.paused")Changed(true);else if(name=="integration.json")Changed(false);});
+  Watch(Runtime(""),name=>{if(name=="installing.json"||name=="lifecycle-state.json"||name=="obs-registration.pending")Changed(false);});
  }
  static void WatchHosts() {
   foreach(string kind in new[]{"Start","Stop"})try {
@@ -86,7 +88,7 @@ class Launcher {
  static string sceneObserved;
  static string ObserveScenes() {
   string target=null;
-  if(File.Exists(Runtime("integration.json"))) {var cfg=Read(Runtime("integration.json"));string config=Text(cfg,"obsConfig");if(!String.IsNullOrWhiteSpace(config))target=Path.Combine(config,"basic","scenes");}
+  if(File.Exists(Profile("runtime\\integration.json"))) {var cfg=Read(Profile("runtime\\integration.json"));string config=Text(cfg,"obsConfig");if(!String.IsNullOrWhiteSpace(config))target=Path.Combine(config,"basic","scenes");}
   string directory=target,filter="*.json";
   while(directory!=null&&!Directory.Exists(directory)){filter=Path.GetFileName(directory);directory=Path.GetDirectoryName(directory);}
   string identity=directory==null?null:directory+"|"+filter;
@@ -132,7 +134,7 @@ class Launcher {
      bool healthy=bridge!=null&&!bridge.HasExited&&desktop!=null&&!desktop.HasExited;
      if(healthy){if(healthySince==0)healthySince=Clock;}
      else if(healthySince!=0){if(Clock-healthySince>=30000)attempts=0;healthySince=0;nextAttempt=Clock+1000;}
-     bool paused=File.Exists(Runtime("autostart.paused")),updating=File.Exists(Runtime("installing.json"));
+     bool paused=File.Exists(Profile("runtime\\autostart.paused")),updating=File.Exists(Runtime("installing.json"));
      if(active&&!paused&&!updating&&!healthy&&start==null&&attempts<4) {
       if(Clock>=nextAttempt&&StartAvailable()){attempts++;Status("starting");start=new Command("Start-Overlay.ps1","-FromHost");}
       else wait=Math.Min(wait==Timeout.Infinite?Int32.MaxValue:wait,(int)Math.Max(100,Math.Min(1000,nextAttempt-Clock)));

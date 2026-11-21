@@ -13,7 +13,7 @@ stage.mkdir()
 # maintenance evidence, not portable program source or public user guidance.
 local_documents={'AGENTS.md','docs/ARCHITECTURE-REVIEW.md','docs/CODE-REVIEW.md','docs/UI-DELIVERY.md','docs/UI-REVIEW.md','docs/UI-WORKLOG.md'}
 source=[]
-for glob in ('*.js','*.css','*.html','*.lua','*.ps1','*.cmd','*.md','VERSION','LICENSE','.gitignore','.gitattributes'):
+for glob in ('*.js','*.cjs','*.css','*.html','*.lua','*.ps1','*.cmd','*.md','VERSION','LICENSE','.gitignore','.gitattributes'):
  source.extend(p for p in ROOT.glob(glob) if p.is_file())
 for folder in ('src','assets','defaults','tools','tests','docs','licenses','design','examples','.github'):
  source.extend(p for p in (ROOT/folder).rglob('*') if p.is_file() and p.name!='layout.json' or p.is_file() and folder=='defaults')

@@ -37,5 +37,5 @@ try {
   $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanup))
   Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',$encoded) -WindowStyle Hidden|Out-Null
  }
- @{ok=$true;retainedData=$InstallPath}|ConvertTo-Json -Compress
+ @{ok=$true;retainedData=[OverlayLifecyclePaths]::ProfileDirectory();legacyData=$InstallPath}|ConvertTo-Json -Compress
 } finally {Exit-OverlayLock $mutex}

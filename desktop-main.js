@@ -6,17 +6,18 @@ const {performance}=require('node:perf_hooks');
 const {createDisplayController}=require('./desktop-display');
 const {watchFiles}=require('./desktop-files');
 const {createHudLayer}=require('./desktop-hud-layer');
-const root=__dirname,config=path.join(root,'runtime','desktop.json'),statusFile=path.join(root,'runtime','desktop-status.json');
-app.setPath('userData',path.join(root,'runtime','desktop-profile'));app.setName('SimRacingOverlay');
+const {profileDirectory}=require('./desktop-config.cjs');
+const root=__dirname,dataRoot=profileDirectory(),config=path.join(dataRoot,'runtime','desktop.json'),statusFile=path.join(root,'runtime','desktop-status.json');
+app.setPath('userData',path.join(dataRoot,'runtime','desktop-profile'));app.setName('SimRacingOverlay');
 if(process.platform==='win32')app.setAppUserModelId('SimRacingOverlay');
-const port=(()=>{try{return JSON.parse(fs.readFileSync(path.join(root,'settings.json'),'utf8')).httpPort||18764;}catch{return 18764;}})();
+const port=(()=>{try{return JSON.parse(fs.readFileSync(path.join(dataRoot,'settings.json'),'utf8').replace(/^\uFEFF/,'')).httpPort||18764;}catch{return 18764;}})();
 const baseUrl='http://127.0.0.1:'+port+'/',managerUrl=baseUrl+'manager.html';
 const {createStore,createElectronRequest}=require('./wheel-store');
 const {createDesktopTray}=require('./desktop-tray');
 const {createUpdateService}=require('./desktop-updates');
 const {createService:createComponentService}=require('./component-host');
 const wheelCatalog=JSON.parse(fs.readFileSync(path.join(root,'assets','wheel-catalog.json'),'utf8'));
-const wheelStore=createStore({request:createElectronRequest(net),root,catalog:wheelCatalog,validate:require('./wheel-profile').validate});
+const wheelStore=createStore({request:createElectronRequest(net),root:dataRoot,catalog:wheelCatalog,validate:require('./wheel-profile').validate});
 if(!app.requestSingleInstanceLock())app.quit();else{
  let updateService,componentService,updateStartup,updateTimer,moduleOperation=false;
  let win,manager,tray,trayController,timer,displays,hudLayer,loadedRevision=null,closingManager=false,closeBusy=false,managerDisplayId=null;
@@ -421,7 +422,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  function publishLayoutChange(){
   let contents,stage;
   try{
-   contents=fs.readFileSync(path.join(root,'assets','layout.json'),'utf8');
+   contents=fs.readFileSync(path.join(dataRoot,'assets','layout.json'),'utf8');
    if(contents===observedLayout)return;
    stage=JSON.parse(contents)?.stage;
   }catch(error){reportError(error);return;}
@@ -490,7 +491,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
  }
  function selectedDisplay(){const s=settings(),ds=screen.getAllDisplays();return s.monitor>0?ds[Math.min(ds.length-1,s.monitor-1)]:(manager&&!manager.isDestroyed()?ds.find(d=>d.id===managerDisplayId):null)||screen.getDisplayNearestPoint(screen.getCursorScreenPoint());}
  function desktopScene(s,d){const width=Math.max(1,Math.min(1600,Math.round(s.width||600),d.bounds.width,Math.floor(d.bounds.height/.85))),area=d.bounds,p=displays?.get(d);return {...(s.placement?.mode==='relative'?require('./layout.js').screenStage(area.width,area.height,s.placement):{width:area.width,height:area.height,originX:Number.isFinite(s.x)&&s.x!==-1?s.x:area.width-width-24,originY:Number.isFinite(s.y)&&s.y!==-1?s.y:area.height-Math.round(width*.85)-24,scale:width/1000}),pixelWidth:p?.width||Math.round(area.width*d.scaleFactor),pixelHeight:p?.height||Math.round(area.height*d.scaleFactor),monitorPixelWidth:p?.width||Math.round(area.width*d.scaleFactor),monitorPixelHeight:p?.height||Math.round(area.height*d.scaleFactor)};}
- function saveScene(scene){const target=path.join(root,'assets','layout.json');try{const old=JSON.parse(fs.readFileSync(target,'utf8'));if(JSON.stringify(old.stage)===JSON.stringify(scene))return;const value=require('./layout.js').clean({...old,stage:scene});fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);}catch(e){fs.writeFileSync(path.join(root,'runtime','layout-error.txt'),String(e.message));}}
+ function saveScene(scene){const target=path.join(dataRoot,'assets','layout.json');try{const old=JSON.parse(fs.readFileSync(target,'utf8'));if(JSON.stringify(old.stage)===JSON.stringify(scene))return;const value=require('./layout.js').clean({...old,stage:scene});fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);}catch(e){fs.writeFileSync(path.join(root,'runtime','layout-error.txt'),String(e.message));}}
  function syncDisplays(refresh=false){if(!quitting&&win&&!win.isDestroyed())displays.request(selectedDisplay(),refresh);}
  function status(){const s=settings(),d=selectedDisplay(),{shortcuts,recording}=shortcutsState();return {control:{pid:process.pid,session:controlSession,ready:!hudNavigating,managerOpen:!!manager&&!manager.isDestroyed()},lastOpenRequest,visible:!!s.visible,page:Math.max(1,Math.min(2,s.page||1)),reference:{...reference},referenceSuppressed,layoutShortcut:shortcutState().accelerator,layoutShortcutState:legacyShortcutState(),shortcuts,recording,sceneInteractive:sceneInteractive(),sceneInputCaptured,directEditor:{...directEditor},managerBounds:managerBounds(),monitor:s.monitor||0,selectedDisplayId:d.id,displays:screen.getAllDisplays().map((d,i)=>({index:i+1,id:d.id,label:d.label||'显示器 '+(i+1),bounds:d.bounds,scaleFactor:d.scaleFactor})),maximized:!!manager&&!manager.isDestroyed()&&manager.isMaximized(),baseUrl};}
  function publish(){
@@ -773,7 +774,7 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    return {ok:true,...status()};
   });
   ipcMain.handle('wheel-list',e=>{if(!trustedManager(e))return {ok:false,error:'非当前管理页面'};try{return {ok:true,faces:wheelStore.list()};}catch(err){return {ok:false,error:err.message};}});ipcMain.handle('wheel-download',async(e,id)=>{if(!trustedManager(e))return {ok:false,error:'非当前管理页面'};try{return await wheelStore.install(id);}catch(err){return {ok:false,error:err.message};}});
-  function writeLayout(input){try{const value=require('./layout.js').clean({...input,stage:desktopScene(settings(),selectedDisplay())}),target=path.join(root,'assets','layout.json');fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);return {ok:true};}catch(err){return {ok:false,error:String(err.message)};}}
+  function writeLayout(input){try{const value=require('./layout.js').clean({...input,stage:desktopScene(settings(),selectedDisplay())}),target=path.join(dataRoot,'assets','layout.json');fs.writeFileSync(target+'.tmp',JSON.stringify(value,null,2));fs.renameSync(target+'.tmp',target);return {ok:true};}catch(err){return {ok:false,error:String(err.message)};}}
   ipcMain.handle('layout-save',(e,input)=>trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'});ipcMain.on('layout-save-sync',(e,input)=>{e.returnValue=trustedManager(e)?writeLayout(input):{ok:false,error:'非当前管理页面'};});ipcMain.on('edit-finish',e=>{if(trustedManager(e))closeManager();});ipcMain.on('manager-open',(e,page)=>{if(trustedHost(e))openManager(page);});
   for(const binding of shortcutBindings){
    try{binding.accelerator=configuredShortcut(settings(),binding);}
@@ -781,8 +782,8 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   }
   restoreShortcuts();shortcutReady=true;
   trayController=createDesktopTray({Tray,nativeImage,root,tooltipSuffix:editShortcutTooltip(),onChange:persistStatus});tray=trayController.tray;tray.on('click',()=>{void openManager('overview');});refreshTrayMenu();
-  componentService=createComponentService({root,beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},reloadHud:reloadComponentHud});
-  updateService=createUpdateService({root,request:createElectronRequest(net),onState:state=>{trayController?.setUpdateAvailable(state.available);refreshTrayMenu();if(manager&&!manager.isDestroyed())manager.webContents.send('updates-state',state);},beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},applyModules:async expectedRevision=>reloadComponentHud(expectedRevision),installSetup:async(file,attempt,onExit)=>{await new Promise((resolve,reject)=>{const child=spawn(file,['--quiet','--update','--root',root,'--restart','--attempt-id',attempt.attemptId],{detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('exit',code=>onExit(code));child.once('spawn',()=>{child.unref();resolve();});});}});
+  componentService=createComponentService({root:dataRoot,beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},reloadHud:reloadComponentHud});
+  updateService=createUpdateService({root,dataRoot,request:createElectronRequest(net),onState:state=>{trayController?.setUpdateAvailable(state.verified&&state.available);refreshTrayMenu();if(manager&&!manager.isDestroyed())manager.webContents.send('updates-state',state);},beforeApply:async()=>{const target=manager;if(!target||target.isDestroyed())return true;return await target.webContents.executeJavaScript('window.OverlayManager?.prepareUpdate()')===true;},applyModules:async expectedRevision=>reloadComponentHud(expectedRevision),installSetup:async(file,attempt,onExit)=>{await new Promise((resolve,reject)=>{const child=spawn(file,['--quiet','--update','--root',root,'--restart','--attempt-id',attempt.attemptId],{detached:true,stdio:'ignore',windowsHide:true});child.once('error',reject);child.once('exit',code=>onExit(code));child.once('spawn',()=>{child.unref();resolve();});});}});
   updateStartup=setTimeout(()=>{void updateService.check().catch(reportError);},15000);updateTimer=setInterval(()=>{void updateService.check().catch(reportError);},6*60*60*1000);
   const displayChanged=()=>{syncDisplays(true);apply();};
   for(const event of ['display-added','display-removed','display-metrics-changed']){
@@ -792,13 +793,12 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   unwatch.push(watchFiles(path.dirname(controlFile),[path.basename(controlFile)],readControl,reportError));
   const isSource=file=>/\.(js|css|html)$/i.test(file)&&!file.startsWith('desktop-')&&file!=='tray-wheel-icon.js';
   unwatch.push(watchFiles(root,fs.readdirSync(root).filter(isSource),requestReload,reportError,isSource));
-  const assets=path.join(root,'assets'),isAsset=file=>/\.(js|css|html|png|svg|json)$/i.test(file);
-  unwatch.push(watchFiles(assets,fs.readdirSync(assets).filter(isAsset),files=>{
-   if(files.includes('layout.json'))publishLayoutChange();
-   if(files.some(file=>file!=='layout.json'))requestReload();
-  },reportError,isAsset));
+  const assets=path.join(root,'assets'),dataAssets=path.join(dataRoot,'assets');
+  const isAsset=file=>/\.(js|css|html|png|svg|json)$/i.test(file);
+  unwatch.push(watchFiles(assets,fs.readdirSync(assets).filter(isAsset),requestReload,reportError,isAsset));
+  unwatch.push(watchFiles(dataAssets,['layout.json'],publishLayoutChange,reportError));
   for(const folder of ['materials','wheel-packs']){
-   const directory=path.join(assets,folder);
+   const directory=path.join(folder==='wheel-packs'?dataAssets:assets,folder);
    const files=fs.existsSync(directory)?fs.readdirSync(directory).filter(isAsset):[];
    if(folder==='wheel-packs')for(const {id} of wheelCatalog)files.push(id+'.json');
    unwatch.push(watchFiles(directory,files,filesChanged=>{

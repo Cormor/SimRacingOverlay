@@ -60,6 +60,11 @@ try {
  $roots=@($InstallPath,$MigrationSource)|Where-Object {$_ -and (Test-Path -LiteralPath (Join-Path $_ 'runtime\SimRacingLauncher.exe'))}|Select-Object -Unique
  Write-UpdateState 'stopping' '正在保存并关闭应用…'
  foreach($root in $roots){Stop-OverlayWatcher $root;Stop-OverlayPendingStarts $root;Stop-OverlayRuntime $root}
+ # Migrate while a legacy junction still identifies its previous installation.
+ $legacyRoots=@()
+ if(!$link){$legacyRoots+=@($InstallPath)}
+ if($MigrationSource -and ($link -or ![OverlayLifecyclePaths]::Same($InstallPath,$MigrationSource))){$legacyRoots+=@($MigrationSource)}
+ $dataRoot=Initialize-OverlayProfile $Payload $legacyRoots
  if($link){[IO.Directory]::Delete($InstallPath)}
  New-Item -ItemType Directory -Force -Path $InstallPath|Out-Null
  $programFiles=[Collections.Generic.List[string]]::new()
@@ -84,24 +89,6 @@ try {
    [IO.File]::Delete((Join-Path $InstallPath $relative))
   }
  }
- # Existing target data wins; migration only fills absent files.
- if($MigrationSource -and $MigrationSource -ine $InstallPath){
-  foreach($relative in $preserved){
-   $source=Join-Path $MigrationSource $relative;$destination=Join-Path $InstallPath $relative
-   if(!(Test-Path -LiteralPath $source)){continue}
-   if((Get-Item -LiteralPath $source -Force).PSIsContainer){
-    Assert-PlainTree $source
-    foreach($file in Get-ChildItem -LiteralPath $source -Recurse -File -Force){
-     $to=Join-Path $destination $file.FullName.Substring($source.Length+1)
-     if(!(Test-Path -LiteralPath $to)){New-Item -ItemType Directory -Force -Path (Split-Path $to)|Out-Null;Copy-Item -LiteralPath $file.FullName -Destination $to}
-    }
-   }elseif(!(Test-Path -LiteralPath $destination)){New-Item -ItemType Directory -Force -Path (Split-Path $destination)|Out-Null;Copy-Item -LiteralPath $source -Destination $destination}
-  }
- }
- foreach($pair in @(@('settings.json','defaults\settings.json'),@('assets\layout.json','defaults\layout.json'))){
-  $destination=Join-Path $InstallPath $pair[0]
-  if(!(Test-Path -LiteralPath $destination)){New-Item -ItemType Directory -Force -Path (Split-Path $destination)|Out-Null;Copy-Item -LiteralPath (Join-Path $InstallPath $pair[1]) -Destination $destination}
- }
  $version=(Get-Content -Encoding UTF8 -LiteralPath (Join-Path $InstallPath 'VERSION') -Raw).Trim()
  $programs=[Environment]::GetFolderPath('Programs');$shortcut=Join-Path $programs 'SimRacingOverlay.lnk'
  $shell=New-Object -ComObject WScript.Shell;$entry=$shell.CreateShortcut($shortcut)
@@ -114,7 +101,7 @@ try {
  New-ItemProperty -Path $key -Name NoModify -Value 1 -PropertyType DWord -Force|Out-Null
  New-ItemProperty -Path $key -Name NoRepair -Value 1 -PropertyType DWord -Force|Out-Null
  # Full upgrades select the new bundled algorithms, while imported generations remain user data.
- $activeModules=Join-Path $InstallPath 'assets\modules\active.json'
+ $activeModules=Join-Path $dataRoot 'assets\modules\active.json'
  if(Test-Path -LiteralPath $activeModules){Remove-Item -LiteralPath $activeModules -Force}
  Write-OverlayJson (Join-Path $InstallPath 'runtime\installed-app.json') @{version=$version;root=$InstallPath;installed=$true;files=@($programFiles);shortcut=$shortcut;installedAt=[DateTime]::UtcNow.ToString('O')}
  @{ok=$true;version=$version;installPath=$InstallPath;shortcut=$shortcut}|ConvertTo-Json -Compress

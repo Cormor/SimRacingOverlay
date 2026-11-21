@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $root=[OverlayLifecyclePaths]::Canonical($PSScriptRoot)
 $mutex=Enter-OverlayLock
 try {
- $integrationFile=Join-Path $root 'runtime\integration.json'
+ $integrationFile=Join-Path ([OverlayLifecyclePaths]::ProfileDirectory()) 'runtime\integration.json'
  $cfg=if(Test-Path -LiteralPath $integrationFile){Get-Content -LiteralPath $integrationFile -Raw|ConvertFrom-Json}else{$null}
  $obsReceipt=Join-Path $root 'runtime\obs-registration.json';$registered=$null
  if(Test-Path -LiteralPath $obsReceipt){$registered=Get-Content -LiteralPath $obsReceipt -Raw|ConvertFrom-Json}

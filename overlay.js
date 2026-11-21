@@ -50,6 +50,45 @@ let state={connected:false},angle=0,qaClock=null;
 let paintAngle=0,displayAngle=null,displayFrame=null,displayLastAt=null,lastPaintSignature=null;
 const hardwareInputs=new Map(),retiredHardwareEpochs=new Set();let hardwareEpoch=null,hardwareStatusSample=null,gameSteering=null;
 const transportClock=new TelemetryClock.Clock();
+const displayHoldMs=1000,heldReadings=new Map(),heldGameReadings=new Map();
+let lastBallDisplay=null,lastGameDisplay=null,lastAssistDisplay=null,displayGameIdentity=null;
+let lastButtonDisplay=null,lastLedDisplay=null;
+function withinDisplayHold(reading,now){return reading&&now-reading.at<displayHoldMs;}
+function rememberGameDisplay(game,now){
+ if(!game?.available)return;
+ const identity=JSON.stringify([game.source,game.vehicleIdentity,game.carModel,game.streamEpoch]);
+ if(identity!==displayGameIdentity||game.paused||game.inMenu){
+  displayGameIdentity=identity;
+  heldGameReadings.clear();gameSteering=null;
+  lastGameDisplay=lastAssistDisplay=lastBallDisplay=null;
+ }
+ if(game.paused||game.inMenu)return false;
+ if(Number.isInteger(game.packet)&&game.packet===lastGameDisplay?.game.packet)return false;
+ lastGameDisplay={game,at:now};
+ for(const name of gameDisplayFields)rememberDisplayReading(name,game[name],now,heldGameReadings);
+ if(!Number.isFinite(game.rpmPercent)&&Number.isFinite(game.rpm)&&Number.isFinite(game.maxRpm)&&game.maxRpm>0)
+  rememberDisplayReading('rpmPercent',game.rpm/game.maxRpm*100,now,heldGameReadings);
+ for(const name of shiftDisplayFields)rememberDisplayReading(name,game.shiftLights?.[name],now,heldGameReadings);
+ for(const name of statusDisplayFields)rememberDisplayReading(name,game.statuses?.[name],now,heldGameReadings);
+ for(let i=0;i<4;i++)for(const name of wheelDisplayFields)
+  rememberDisplayReading(i+name,game.wheels?.[i]?.[name],now,heldGameReadings);
+ return true;
+}
+const pedalNames=['throttle','brake','handbrake'];
+const dashboardFields=['speedKmh','rpm','maxRpm','rpmPercent','gear'];
+const gameDisplayFields=[...dashboardFields,'brake','gas'];
+const statusDisplayFields=['absActive','tcActive','escActive','waterTempWarning','oilPressureWarning',
+ 'fuelPressureWarning','engineStalled','pitLimiterActive','trackSurface','sessionFlags'];
+const wheelDisplayFields=['ratio','slipFeedback'];
+const shiftDisplayFields=['indicator','firstRpm','lastRpm','blinkRpm'];
+function rememberDisplayReading(name,value,at,readings=heldReadings){
+ if(!Number.isFinite(value)&&typeof value!=='boolean'&&!(name==='gear'&&typeof value==='string'&&value.length))return;
+ if(at>=(readings.get(name)?.at??-Infinity))readings.set(name,{value,at});
+}
+function heldDisplayReading(name,now,readings=heldReadings){
+ const reading=readings.get(name);
+ return withinDisplayHold(reading,now)?reading.value:null;
+}
 let clockRequest=null,clockRetryAt=0,clockRevision=0;
 function clearTimedState(now){
  advanceFeed();hardwareInputs.clear();hardwareStatusSample=null;gameSteering=null;
@@ -91,13 +130,15 @@ function observeHardware(meta,channels,now){
  if(meta.epoch!==hardwareEpoch){
   if(retiredHardwareEpochs.has(meta.epoch))return;
   if(hardwareEpoch!==null){retiredHardwareEpochs.add(hardwareEpoch);if(retiredHardwareEpochs.size>16)retiredHardwareEpochs.delete(retiredHardwareEpochs.values().next().value);}
-  hardwareEpoch=meta.epoch;hardwareInputs.clear();
+  hardwareEpoch=meta.epoch;hardwareInputs.clear();lastButtonDisplay=lastLedDisplay=null;
  }
  for(const [name,channel] of Object.entries(channels||{})){
   const prior=hardwareInputs.get(name);if(prior&&meta.sequence<=prior.sequence)continue;
   const ageMs=channel?.ageMs;
   hardwareInputs.set(name,{sequence:meta.sequence,at:now,ageMs:Number.isFinite(ageMs)&&ageMs>=0?ageMs:Infinity,
    validForMs:meta.validForMs,value:channel?.value,state:channel?.state});
+  if(channel?.state==='valid'&&ageMs>=0&&ageMs<meta.validForMs)
+   rememberDisplayReading(name,channel.value,now-ageMs);
  }
 }
 function hardwareValue(name,now){
@@ -107,29 +148,49 @@ function hardwareValue(name,now){
 function steeringValue(now){
  if(demo)return Number.isFinite(state.angle)?state.angle:null;
  const hardware=hardwareValue('steering',now);if(hardware!==null)return hardware;
- return gameSteering&&now-gameSteering.at<400?gameSteering.angle:null;
+ return gameSteering&&now-gameSteering.at<400?gameSteering.angle:heldDisplayReading('steering',now)??heldDisplayReading('steering',now,heldGameReadings);
 }
 // Neutral canvas pose is a drawing choice, not a valid zero-angle reading.
 function steeringAt(now){return steeringValue(now)??0;}
-function observeSteering(s,now){
+function observeSteering(s,now,newGameReading=rememberGameDisplay(s?.game,now)){
  observeHardware(s?.hardware,s?.hardware?.channels,now);
  const hardware=s?.hardware,previous=hardwareStatusSample?.hardware;
  if(hardware&&hardware.epoch===hardwareEpoch&&Number.isSafeInteger(hardware.sequence)&&hardware.sequence>=0&&
     (!previous||hardware.epoch!==previous.epoch||hardware.sequence>previous.sequence)){
   hardwareStatusSample={hardware,devices:s.devices||[],at:now};
+  const wheel=s.devices?.find(device=>device.id===hardware.channels?.steering?.deviceId);
+  if(Array.isArray(wheel?.buttons)&&Number.isFinite(wheel.ageMs)&&wheel.ageMs>=0&&wheel.ageMs<hardware.validForMs)
+   lastButtonDisplay={buttons:wheel.buttons,at:now-wheel.ageMs};
  }
- gameSteering=s?.game?.available&&Number.isFinite(s.gameSteeringAngle)?{at:now,angle:s.gameSteeringAngle}:null;
+ if(s?.leds?.available===true)lastLedDisplay={leds:s.leds,at:now};
+ if(!s?.game?.available||s.game.paused||s.game.inMenu)gameSteering=null;
+ if(newGameReading){
+  gameSteering=Number.isFinite(s.gameSteeringAngle)?{at:now,angle:s.gameSteeringAngle}:null;
+  if(hardwareValue('steering',now)===null&&gameSteering)rememberDisplayReading('steering',gameSteering.angle,now,heldGameReadings);
+  for(const name of pedalNames)if(s.inputSources?.[name]==='game'&&hardwareValue(name,now)===null)
+   rememberDisplayReading('input:'+name,s[name],now,heldGameReadings);
+ }
 }
 function displayInputs(s,now){
  if(qa||demo)return s;
- const status=getHardwareStatus(now),wheelId=status.hardware?.channels?.steering?.deviceId;
- const wheel=status.devices.find(device=>device.id===wheelId);
- const values={angle:steeringValue(now),buttons:Array.isArray(wheel?.buttons)?wheel.buttons:[]};
- for(const name of ['throttle','brake','handbrake']){
+ const values={angle:steeringValue(now),buttons:withinDisplayHold(lastButtonDisplay,now)?lastButtonDisplay.buttons:[],
+  leds:s.leds?.available===true&&now-lastInputAt<400?s.leds:withinDisplayHold(lastLedDisplay,now)?lastLedDisplay.leds:null};
+ for(const name of pedalNames){
   const hardware=hardwareValue(name,now);
-  values[name]=hardware!==null?hardware:s.inputSources?.[name]==='game'&&now-lastInputAt<400&&Number.isFinite(s[name])?s[name]:null;
+  values[name]=hardware??(s.inputSources?.[name]==='game'?heldDisplayReading('input:'+name,now,heldGameReadings):null)
+   ??heldDisplayReading(name,now)??heldDisplayReading('input:'+name,now,heldGameReadings);
  }
  return {...s,...values};
+}
+function gameForDisplay(game,now){
+ if(qa||demo||!game?.available||game.paused||game.inMenu)return game;
+ const held=name=>heldDisplayReading(name,now,heldGameReadings);
+ const values=Object.fromEntries(gameDisplayFields.map(name=>[name,held(name)]));
+ const statuses={...game.statuses,...Object.fromEntries(statusDisplayFields.map(name=>[name,held(name)]))};
+ const wheels=Array.from({length:4},(_,i)=>({...game.wheels?.[i],
+  ...Object.fromEntries(wheelDisplayFields.map(name=>[name,held(i+name)]))}));
+ const shiftLights=Object.fromEntries(shiftDisplayFields.map(name=>[name,held(name)]));
+ return {...game,...values,statuses,wheels,shiftLights};
 }
 function getHardwareStatus(now=performance.now()){
  const hardware=hardwareStatusSample?.hardware,elapsed=hardwareStatusSample?Math.max(0,now-hardwareStatusSample.at):0;
@@ -555,8 +616,8 @@ function centreStripe(){
  ctx.globalCompositeOperation='luminosity';ctx.globalAlpha=.18;ctx.drawImage(image,0,0);ctx.restore();
 }
 const componentPaint=(!qa||params.get('retained')==='1')&&typeof ComponentPaint!=='undefined'?new ComponentPaint.Components():null;
-function componentKey(id,s,online,p,now,faceKey,dashboardKey){
- const g=s.game,a=assistView;
+function componentKey(id,s,online,p,now,faceKey,dashboardKey,a,ball){
+ const g=s.game;
  if(id==='dashboard')return dashboardKey;
  if(id==='wheel')return [faceKey,uiInfo.waiting];
  if(id==='brake'||id==='throttle'){const f=componentFrames[id];return [online,p.fresh,id==='brake'?[s.brake,p.brake?.state]:[s.throttle,p.drive?.state],f&&[f.selection,f.semantic.status,f.semantic.signal,f.motion.opacity,f.motion.glow,f.tokens]];}
@@ -567,7 +628,7 @@ function componentKey(id,s,online,p,now,faceKey,dashboardKey){
  if(id==='decel')return [online,a.fresh,a.decel];
  if(id==='handbrake')return [online,s.handbrake];
  if(id==='statuses')return [online,g?.available,g?.paused,g?.inMenu,g?.statuses,['absActive','tcActive','escActive'].map(k=>g?.statuses?.[k]===true||performance.now()<(latch[k]||0))];
- if(id==='gBall')return gBallView;
+ if(id==='gBall')return ball;
  if(id==='flags')return [online,uiInfo.waiting,g?.available,g?.source,g?.paused,g?.inMenu,g?.statuses?.sessionFlags];
  return now;
 }
@@ -586,14 +647,23 @@ function prepareScene(now,preview=null){
  const raster=layout.raster?.(stage,window.devicePixelRatio||1,window.innerWidth,window.innerHeight,params.has('stage'))||{width:stage.width,height:stage.height,ratio:1};
  paintScale=stage.scale*raster.ratio;uiInfo.raster=raster;
 
- const s=preview?.state||displayInputs(state,now),live=s.connected&&(preview||qa||now-lastInputAt<1000);
- let sceneAssist=preview?.assist||assistView;const sceneBall=preview?.ball??gBallView;
- const online=demo||live;angle=online?s.angle:null;
- if(!preview&&(!online||performance.now()-sceneAssist.processedAt>400)){assistView={fresh:false,unloaded:[false,false,false,false]};sceneAssist=assistView;}
+ const raw=preview?.state||displayInputs(state,now);
+ const live=raw.connected&&(preview||qa||now-lastInputAt<displayHoldMs);
+ const gameMissing=!raw.game?.available||now-(lastGameDisplay?.at??-Infinity)>=400;
+ const heldGame=!preview&&!qa&&!demo&&gameMissing&&withinDisplayHold(lastGameDisplay,now)?lastGameDisplay.game:null;
+ const shownGame=gameMissing&&!preview&&!qa&&!demo&&!raw.game?.paused&&!raw.game?.inMenu?heldGame:raw.game;
+ const s=preview?raw:{...raw,game:gameForDisplay(shownGame,now)};
+ const online=demo||live||!!heldGame;
+ angle=online?s.angle:null;
+ const assistFresh=live&&assistView.fresh&&now-assistView.processedAt<=400;
+ const heldAssist=!preview&&!qa&&!demo&&!assistFresh&&withinDisplayHold(lastAssistDisplay,now)?lastAssistDisplay.view:null;
+ const sceneAssist=preview?.assist||(assistFresh||qa||demo?assistView:heldAssist||{fresh:false,unloaded:[false,false,false,false]});
+ const sceneBall=preview?.ball??(withinDisplayHold(lastBallDisplay,now)&&!gBallView?.current
+  &&!raw.game?.paused&&!raw.game?.inMenu?{...gBallView,current:lastBallDisplay.current}:gBallView);
  layout.begin();
- const sceneWaiting=preview?(preview.waiting??!s.game?.available):!demo&&telemetryWaiting(s.game,now);uiInfo.waiting=sceneWaiting;
- for(const key of ['absActive','tcActive','escActive'])if(!preview&&online&&s.game?.statuses?.[key]===true)latch[key]=now+220;
- if(!preview)for(let i=0;i<4;i++)advanceWheelLock(s,online,sceneAssist,i,now);
+ const sceneWaiting=preview?(preview.waiting??!raw.game?.available):!demo&&telemetryWaiting(raw.game,now);uiInfo.waiting=sceneWaiting;
+ for(const key of ['absActive','tcActive','escActive'])if(!preview&&live&&raw.game?.statuses?.[key]===true)latch[key]=now+220;
+ if(!preview)for(let i=0;i<4;i++)advanceWheelLock(raw,live,assistFresh?assistView:{fresh:false},i,now);
  const presented=preview?(preview.displayAssist||sceneAssist):presentationView(sceneAssist,now);
  const sceneLocks=preview?.locks||lockState.map(x=>({...x})),sceneLatches=preview?.latches||{...latch};
  const input={state:s,assist:sceneAssist,displayAssist:presented,ball:sceneBall,now,online,sampleAt:preview?now:lastInputAt,locks:sceneLocks,latches:sceneLatches,waiting:sceneWaiting};
@@ -602,33 +672,33 @@ function prepareScene(now,preview=null){
  const rawGroups=[];
  const sceneGroup=(id,draw)=>{const definition=layout.byId?.get(id);if(!definition)return;rawGroups.push({id,bounds:definition.bounds,draw});layout.group(id,()=>paintRegisteredComponent(componentRenderer,id,ctx,definition.bounds,draw,sceneFrames,paintScale,false));};
  const retained=params.get('edit')==='1'?null:componentPaint;
- sceneGroup('brake',()=>bar(70,online?s.brake:0,UI.colors.brake,'刹车',online,presented.brake,'brake'));
- sceneGroup('throttle',()=>bar(930,online?s.throttle:0,UI.colors.throttle,'油门',online,presented.drive,'throttle'));
+ sceneGroup('brake',()=>bar(70,s.brake,UI.colors.brake,'刹车',Number.isFinite(s.brake),presented.brake,'brake'));
+ sceneGroup('throttle',()=>bar(930,s.throttle,UI.colors.throttle,'油门',Number.isFinite(s.throttle),presented.drive,'throttle'));
  const wheelSettings=layout.get?.().wheel||{faceId:'default',dashboardMode:'auto',buttonMaps:{}};
  const overrides=wheelSettings.buttonMaps?.[activeFace.id]||{};
  controls=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls(activeFace,overrides,s.inputProfile?.buttonMap):activeFace.controls.map((c,i)=>({...c,b:Number.isInteger(s.inputProfile?.buttonMap?.[i])?[s.inputProfile.buttonMap[i]]:c.b.slice()}));
  const sceneControls=controls.slice();
  encoders=typeof WheelProfiles!=='undefined'?WheelProfiles.mapControls({...activeFace,controls:activeFace.encoders},overrides):activeFace.encoders;
- const pressed=new Set(online?s.buttons:[]);let led=s.leds||{};const liveButtonLights=activeFace.id==='default'&&online&&buttonLightsAvailable(led);
+ const pressed=new Set(s.buttons||[]);let led=s.leds||{};const liveButtonLights=activeFace.id==='default'&&buttonLightsAvailable(led);
  uiInfo.ambientButtons=!liveButtonLights;
  const ambientPeriod=1000/30,ambientAt=Math.floor(now/ambientPeriod)*ambientPeriod;
  const tendency=sceneAssist.grip?.steeringState;
  const ambientAlert=Math.max(0,Math.min(tendency?.front||0,tendency?.rear||0),...Object.values(sceneAssist.grip?.axles||{}).map(x=>x.overrun||0),...(s.game?.speedKmh>10?s.game?.wheels||[]:[]).map(w=>Math.max(0,Math.min(1,(-(w.ratio||0)-.65)/.35))));
  // Screen-only fallback: game-reported shift thresholds, not a hardware LED acknowledgement.
- if(!(activeFace.id==='default'&&online&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&!uiInfo.waiting&&s.game?.available){
+ if(!(activeFace.id==='default'&&led.available===true&&Array.isArray(led.rpm)&&led.rpm.some(v=>typeof v==='string'))&&online&&!uiInfo.waiting&&s.game?.available){
   const lights=shiftLightColors(s.game,now);
   if(lights){led={...led,rpm:lights.colors};uiInfo.rpmLightSource=lights.source;}else uiInfo.rpmLightSource='unavailable';
- }else uiInfo.rpmLightSource=activeFace.id==='default'&&online&&led.available===true?'observed-device':'unavailable';
+ }else uiInfo.rpmLightSource=activeFace.id==='default'&&led.available===true?'observed-device':'unavailable';
  if(uiInfo.rpmLightSource==='unavailable'||s.game?.paused||s.game?.inMenu)led={...led,rpm:[]};
  if(typeof WheelProfiles!=='undefined')led={...led,rpm:WheelProfiles.resample(led.rpm,ledShapes.length)};
  const rpmPaint=ledShapes.map(shape=>emittedColor((led.rpm||[])[shape.led]));
  const buttonPaint=controls.map(c=>{
-  const axisValue=c.axis&&online?(s.paddleMode==='combined'?s.handbrake:s[c.axis])||0:0;
+  const axisValue=c.axis?(s.paddleMode==='combined'?s.handbrake:s[c.axis]):null;
   const color=c.led===undefined?null:liveButtonLights?(led.buttons||[])[c.led]:ambientButtonColor(c,ambientAt,ambientAlert);
   return {c,color,highlight:c.id===mappingHighlight||c.b.some(b=>pressed.has(b))||axisValue>1};
  });
  const knobPaint=encoders.map((e,index)=>{
-  const n=e.led===undefined?index:e.led-8,rawColor=(led.knobs||[])[n],ambient=e.led!==undefined&&!(activeFace.id==='default'&&online&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
+  const n=e.led===undefined?index:e.led-8,rawColor=(led.knobs||[])[n],ambient=e.led!==undefined&&!(activeFace.id==='default'&&led.available===true&&typeof rawColor==='string'&&/^#[0-9a-f]{6}$/i.test(rawColor));
   const color=e.led===undefined?null:ambient?ambientButtonColor(e,ambientAt,ambientAlert):emittedColor(rawColor);
   if(activeFace.id==='default'&&Array.isArray(s.knobPositions))knobPositions[n]=s.knobPositions[n]??null;
   else if(Number.isInteger(e.first)){for(let i=0;i<12;i++)if(pressed.has(e.first+i))knobPositions[n]=i;}else knobPositions[n]=null;
@@ -636,8 +706,9 @@ function prepareScene(now,preview=null){
  });
  uiInfo.ambientKnobs=knobPaint.some(x=>x.ambient);
  const dash=preview?.dashboard||window.DashRenderer,page=Number(params.get('page')||1);
- const inlineDash=activeFace.dashboard&&wheelSettings.dashboardMode==='auto'?dash?.prepare({game:s.game},page):null;
- const separateDash=preview||wheelSettings.dashboardMode==='separate'?dash?.prepare({game:s.game},page):null;
+ const dashState={game:s.game};
+ const inlineDash=activeFace.dashboard&&wheelSettings.dashboardMode==='auto'?dash?.prepare(dashState,page):null;
+ const separateDash=preview||wheelSettings.dashboardMode==='separate'?dash?.prepare(dashState,page):null;
  const imageReady=image.complete&&image.naturalWidth;
  // Telemetry only invalidates the bitmap when it changes a drawn value.
  const faceKey=JSON.stringify([activeFace.id,imageReady,mappingHighlight,paintScale,[...pressed],
@@ -687,7 +758,7 @@ function prepareScene(now,preview=null){
  sceneGroup('dashboard',()=>{if(separateDash)ctx.drawImage(dash.paint(separateDash,0,activeComponentTokens,activeComponentAssistance),370,210,260,83);});
  for(let i=0;i<4;i++)sceneGroup('slip'+i,()=>wheelSlip(s,online,sceneAssist,i,false,now,sceneLocks));
  drivingUi(s,online,presented,sceneGroup);
- sceneGroup('handbrake',()=>{if(online&&(s.handbrake||0)>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
+ sceneGroup('handbrake',()=>{if(s.handbrake>.5){ctx.fillStyle='#101720ec';ctx.strokeStyle='#ffdc48';ctx.lineWidth=3;ctx.beginPath();ctx.roundRect(440,505,120,95,15);ctx.fill();ctx.stroke();text('手刹',500,526,UI.sizes.secondary,'#ffdc48');text(Math.round(s.handbrake||0)+'%',500,569,UI.sizes.value,'#fff');}
  });
  sceneGroup('statuses',()=>statuses(s,online,false,now,sceneLatches));
 
@@ -702,7 +773,7 @@ function prepareScene(now,preview=null){
 let preparedScene=null,paintPending=false,sceneTimer=null,sceneSignature=null;
 function finishScene(stage,raster,retained,s,online,presented,now,faceKey,dashboardKey,rawGroups,input){
  const jobs=layout.capture?.();
- const keys=Object.fromEntries((jobs||[]).map(j=>[j.id,JSON.stringify([componentKey(j.id,s,online,presented,now,faceKey,dashboardKey),componentRenderKey(componentFrames[j.id])])]));
+ const keys=Object.fromEntries((jobs||[]).map(j=>[j.id,JSON.stringify([componentKey(j.id,s,online,presented,now,faceKey,dashboardKey,input.assist,input.ball),componentRenderKey(componentFrames[j.id])])]));
  preparedScene={stage,raster,retained,jobs,keys,game:s.game,rawGroups,input};
  rememberPreviewInput(input);
  const signature=JSON.stringify([stage,raster,jobs?.map(j=>[j.id,j.c]),keys,layout.selection?.()]);
@@ -785,11 +856,14 @@ async function consume(incoming,receivedAt){
  lastSourceTime=Number.isFinite(game?.sampleTime)?game.sampleTime:null;
  state=incoming;lastInputAt=receivedAt;
  uiInfo.inputProtocol=typeof incoming.hardware?.epoch==='string'?'capture-clock-v2':'unsupported';
- observeSteering(incoming,receivedAt);
+ const newGameReading=rememberGameDisplay(game,receivedAt);
+ observeSteering(incoming,receivedAt,newGameReading);
  gBallView=gBallModel?.update(incoming.connected?game:null,receivedAt);
+ if(game?.paused||game?.inMenu)lastBallDisplay=null;
+ else if(newGameReading&&gBallView?.current)lastBallDisplay={current:gBallView.current,at:receivedAt};
  queueScene(performance.now());
  if(pendingFrame)runtimePerf.coalescedFrames=(runtimePerf.coalescedFrames||0)+1;
- pendingFrame={incoming,receivedAt,feedEpoch,contextEpoch:inputContextEpoch};if(processing)return;
+ pendingFrame={incoming,receivedAt,gameAt:game?.available?lastGameDisplay?.at:null,feedEpoch,contextEpoch:inputContextEpoch};if(processing)return;
  processing=true;
  try{while(pendingFrame){
   const frame=pendingFrame;pendingFrame=null;
@@ -807,7 +881,9 @@ async function consume(incoming,receivedAt){
   if(!current||performance.now()-frame.receivedAt>400||(result.view.fresh&&(!Number.isFinite(result.view.processedAt)||performance.now()-result.view.processedAt>400))){
    runtimePerf.discardedResults=(runtimePerf.discardedResults||0)+1;continue;
   }
-  assistView=result.view;queueScene(performance.now());
+  assistView=result.view;
+  if(assistView.fresh&&Number.isFinite(frame.gameAt))lastAssistDisplay={view:assistView,at:frame.gameAt};
+  queueScene(performance.now());
  }}finally{processing=false;}
 }
 function loseStream(source){
