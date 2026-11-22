@@ -2,7 +2,7 @@
 document.body.classList.toggle('embedded-device',new URLSearchParams(location.search).get('embedded')==='1');
 // D4: the existing sampling and save owner, with saved bindings separate from drafts.
 const $=s=>document.querySelector(s),names={steering:'方向盘',throttle:'油门',brake:'刹车',handbrake:'手刹',handbrake2:'第二手刹'};
-let cfg={},state={},learning=null,buttonLearning=false,previousButtons=[],active=new URLSearchParams(location.search).get('embedded')!=='1',pollTimer=null,saving=false,baseline='',loaded=false;
+let cfg={},state={},learning=null,buttonLearning=false,previousButtons=[],active=new URLSearchParams(location.search).get('embedded')!=='1',pollTimer=null,deviceStream=null,deviceDeadline=null,saving=false,baseline='',loaded=false;
 let configToken=null,disposed=false,pollEpoch=0,pollRequest=null,configEpoch=0,configRequest=null,saveRequest=null,saveUncertain=false,resumeButtons=false;
 function text(selector,value){const node=$(selector);if(node.textContent!==value)node.textContent=value;}
 const bindings={};let savedSettings={};
@@ -70,21 +70,46 @@ $('#save').onclick=async()=>{
  }catch(e){if(disposed||saveRequest!==request)return;if(submitted!==null&&!confirmed){saveUncertain=true;message('保存结果尚未确认；当前设置保留，请重试保存。',true);}else message(e.message+'；当前设置保留',true);}
  finally{clearTimeout(timer);if(saveRequest===request){saveRequest=null;saving=false;if(!disposed)refreshActions();}}
 };
-async function poll(){
- pollTimer=null;if(!active||disposed||pollRequest)return;const epoch=pollEpoch,request=new AbortController();pollRequest=request;const timeout=setTimeout(()=>request.abort(),2000);
- try{const r=await fetch('/state',{cache:'no-store',signal:request.signal});if(!r.ok)throw Error('服务返回'+r.status);const incoming=await r.json();if(disposed||!active||epoch!==pollEpoch||pollRequest!==request)return;state=incoming;if(typeof incoming.configToken==='string')configToken=incoming.configToken;
-  showLiveInput();refreshLabels();
-  if(learning){for(const d of state.devices||[])for(const[a,v]of Object.entries(d.axes||{})){if(!Number.isFinite(v))continue;const key=d.id+':'+a;const sample=learning.samples[key]??=( {deviceId:d.id,productId:d.productId,axis:a,min:v,max:v,rest:v,last:v} );sample.min=Math.min(sample.min,v);sample.max=Math.max(sample.max,v);sample.last=v;}const best=bestSample();$('#meter-'+learning.key).value=best?Math.min(100,(best.max-best.min)/65535*100):0;text('#sample-'+learning.key,best?best.axis+' · '+best.min+'–'+best.max:'等待有效行程');}
+let lastDevicePaint=-Infinity;
+function acceptDeviceState(incoming){
+ state=incoming;if(typeof incoming.configToken==='string')configToken=incoming.configToken;
+  const now=performance.now(),paint=now-lastDevicePaint>=80;
+  if(paint){lastDevicePaint=now;showLiveInput();refreshLabels();}
+  if(learning){for(const d of state.devices||[])for(const[a,v]of Object.entries(d.axes||{})){if(!Number.isFinite(v))continue;const key=d.id+':'+a;const sample=learning.samples[key]??=( {deviceId:d.id,productId:d.productId,axis:a,min:v,max:v,rest:v,last:v} );sample.min=Math.min(sample.min,v);sample.max=Math.max(sample.max,v);sample.last=v;}if(paint){const best=bestSample();$('#meter-'+learning.key).value=best?Math.min(100,(best.max-best.min)/65535*100):0;text('#sample-'+learning.key,best?best.axis+' · '+best.min+'–'+best.max:'等待有效行程');}}
   const pressed=(state.devices||[]).flatMap(d=>(d.buttons||[]).map(b=>d.id+':'+b));
   if(buttonLearning&&!resumeButtons){const wheel=bindings.steering?.deviceId;for(const d of state.devices||[]){if(wheel&&d.id!==wheel)continue;const b=(d.buttons||[]).find(b=>!previousButtons.includes(d.id+':'+b));if(b){cfg.buttonMap??=[];cfg.buttonMap[Number(slot)]=b;buttonLearning=false;$('#cancelButton').hidden=true;showButton();refreshLabels();message('已采用按键；请保存设备设置');break;}}}
   previousButtons=pressed;resumeButtons=false;
- }catch(e){if(!disposed&&active&&epoch===pollEpoch&&pollRequest===request){state={};resumeButtons=buttonLearning;showLiveInput();text('#devices','本机服务暂未连接：'+(e.name==='AbortError'?'读取超时':e.message)+'；设置与采样保留');}}
+}
+function watchDevices(){
+ if(typeof EventSource!=='function'){void poll();return;}
+ let source;try{source=new EventSource('/events');}catch{void poll();return;}
+ deviceStream=source;
+ function unavailable(){
+  state={};lastDevicePaint=-Infinity;resumeButtons=buttonLearning;showLiveInput();
+  text('#devices','本机服务暂未连接，正在重新订阅；设置与采样保留');
+ }
+ function armDeadline(){clearTimeout(deviceDeadline);deviceDeadline=setTimeout(unavailable,2000);}
+ armDeadline();
+ source.onmessage=event=>{
+  if(deviceStream!==source||disposed||!active)return;
+  let incoming;try{incoming=JSON.parse(event.data);}catch{return;}
+  if(incoming&&typeof incoming.connected==='boolean'){armDeadline();acceptDeviceState(incoming);}
+ };
+ source.onerror=()=>{
+  if(deviceStream!==source||disposed||!active)return;
+  clearTimeout(deviceDeadline);unavailable();
+ };
+}
+async function poll(){
+ pollTimer=null;if(!active||disposed||pollRequest)return;const epoch=pollEpoch,request=new AbortController();pollRequest=request;const timeout=setTimeout(()=>request.abort(),2000);
+ try{const r=await fetch('/state',{cache:'no-store',signal:request.signal});if(!r.ok)throw Error('服务返回'+r.status);const incoming=await r.json();if(disposed||!active||epoch!==pollEpoch||pollRequest!==request)return;acceptDeviceState(incoming);
+ }catch(e){if(!disposed&&active&&epoch===pollEpoch&&pollRequest===request){state={};lastDevicePaint=-Infinity;resumeButtons=buttonLearning;showLiveInput();text('#devices','本机服务暂未连接：'+(e.name==='AbortError'?'读取超时':e.message)+'；设置与采样保留');}}
  finally{clearTimeout(timeout);if(pollRequest===request){pollRequest=null;if(active&&!disposed&&epoch===pollEpoch)pollTimer=setTimeout(poll,80);}}
 }
 function setActive(value){
- const next=!!value&&!disposed;if(next===active)return;active=next;pollEpoch++;clearTimeout(pollTimer);pollTimer=null;pollRequest?.abort();pollRequest=null;
- if(!active){state={};configEpoch++;configRequest?.abort();configRequest=null;}
- else{resumeButtons=buttonLearning;if(!loaded)void loadConfig();void poll();}
+ const next=!!value&&!disposed;if(next===active)return;active=next;pollEpoch++;clearTimeout(pollTimer);pollTimer=null;pollRequest?.abort();pollRequest=null;clearTimeout(deviceDeadline);deviceStream?.close();deviceStream=null;
+ if(!active){state={};lastDevicePaint=-Infinity;configEpoch++;configRequest?.abort();configRequest=null;}
+ else{resumeButtons=buttonLearning;if(!loaded)void loadConfig();watchDevices();}
 }
 function showLiveInput(){
  const hardware=state.hardware,fresh=hardware&&Number.isFinite(hardware.ageMs)&&Number.isFinite(hardware.validForMs)&&hardware.ageMs>=0&&hardware.ageMs<hardware.validForMs,devices=fresh?(state.devices||[]):[];
@@ -115,7 +140,7 @@ async function loadConfig(){
  }catch(e){if(!disposed&&active&&epoch===configEpoch&&configRequest===request){message((e.name==='AbortError'?'读取设置超时':e.message)+'；未改动现有设置',true);$('#retryConfig').hidden=false;}}
  finally{clearTimeout(timeout);if(configRequest===request)configRequest=null;}
 }
-addEventListener('unload',()=>{disposed=true;active=false;pollEpoch++;configEpoch++;clearTimeout(pollTimer);pollRequest?.abort();configRequest?.abort();saveRequest?.abort();},{once:true});
+addEventListener('unload',()=>{disposed=true;active=false;pollEpoch++;configEpoch++;clearTimeout(pollTimer);pollRequest?.abort();clearTimeout(deviceDeadline);deviceStream?.close();configRequest?.abort();saveRequest?.abort();},{once:true});
 for(const pair of [['legacyToggle','legacyContent'],['lightsToggle','lightsContent']])UIControls.disclosure($('#'+pair[0]),$('#'+pair[1]));
 for(const node of document.querySelectorAll('[data-icon]'))node.innerHTML=UIControls.icon(node.dataset.icon);
-$('#retryConfig').onclick=loadConfig;enableForm(false);if(active){void loadConfig();void poll();}
+$('#retryConfig').onclick=loadConfig;enableForm(false);if(active){void loadConfig();watchDevices();}

@@ -29,6 +29,7 @@ class Bridge {
  static double? lastLedStamp;
  static double ledDeadline;
  static int port=18764;
+ static int layoutRevision;
  static object Get(Dictionary<string,object> d,string k,object fallback=null){object v;return d!=null&&d.TryGetValue(k,out v)?v:fallback;}
  static Dictionary<string,object> Map(object o){return o as Dictionary<string,object>;}
  static double Number(object o,double fallback=0){double n;return o!=null&&double.TryParse(Convert.ToString(o,System.Globalization.CultureInfo.InvariantCulture),System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out n)&&!double.IsNaN(n)&&!double.IsInfinity(n)?n:fallback;}
@@ -103,6 +104,7 @@ class Bridge {
   using(var mutex=new Mutex(true,"Local\\SimRacingOverlay_"+port,out first)){
    if(!first)return;
    using(new WatchedFile(Path.Combine(profile,"settings.json"),LoadConfig))
+   using(new WatchedFile(Path.Combine(profile,"assets","layout.json"),()=>{Interlocked.Increment(ref layoutRevision);return true;}))
    using(new WatchedFile(Path.Combine(root,"runtime","led-state.json"),LoadLed)){
     SimHubTelemetry.Start(()=>settings.SimHubPort);NativeUdpTelemetry.Start();
     new Thread(DiscoverControllers){IsBackground=true,Name="DirectInput discovery"}.Start();
@@ -119,17 +121,17 @@ class Bridge {
  static void DiscoverControllers(){
   using(var notifications=new ControllerNotifications(discoverControllers))
   using(var direct=new DirectInput()){
-   bool available;
+   bool topologyNotified=false;
    do{
     try{
      var next=direct.GetDevices(DeviceClass.GameControl,DeviceEnumerationFlags.AttachedOnly).OrderByDescending(Score).Select(d=>new Controller(d.InstanceGuid,d.ProductGuid,d.InstanceName,d.Type)).ToArray();
      var prior=discoveredControllers;
-     if(prior==null||prior.Length!=next.Length||prior.Where((d,i)=>!d.SameIdentity(next[i])).Any())discoveredControllers=next;
-     available=next.Length>0;
-    }catch{available=false;}
-    if(discoverControllers.WaitOne(notifications.Active&&available?Timeout.Infinite:1500)){
+     if(topologyNotified||prior==null||prior.Length!=next.Length||prior.Where((d,i)=>!d.SameIdentity(next[i])).Any())discoveredControllers=next;
+    }catch(SharpDX.SharpDXException){}
+    topologyNotified=discoverControllers.WaitOne(notifications.Active?Timeout.Infinite:1500);
+    if(topologyNotified){
      // A HID arrival can precede DirectInput updating its controller list.
-     Thread.Sleep(150);discoverControllers.WaitOne(0);
+     Thread.Sleep(150);
     }
    }while(true);
   }
@@ -155,6 +157,8 @@ class Bridge {
    var opened=new Dictionary<Guid,OpenedController>();
    var attached=NoControllers;
    long sequence=0;
+   const int maxAcquisitionRetries=3;
+   int acquisitionRetries=0;
    double lastAcquisition=double.NegativeInfinity;
    while(true){
     var started=ClockMs();
@@ -162,10 +166,12 @@ class Bridge {
     InputSnapshot snapshot;
     try{
      var latest=discoveredControllers;
-     bool retry=opened.Count<attached.Length&&started-lastAcquisition>=1500;
-     if(retry)discoverControllers.Set();
-     if(latest!=null&&(!ReferenceEquals(latest,attached)||retry)){
+     bool topologyChanged=latest!=null&&!ReferenceEquals(latest,attached);
+     bool retry=opened.Count<attached.Length&&acquisitionRetries<maxAcquisitionRetries&&started-lastAcquisition>=1500;
+     if(topologyChanged||retry){
+      acquisitionRetries=topologyChanged?0:acquisitionRetries+1;
       attached=latest;lastAcquisition=started;UpdateControllers(direct,opened,attached);
+      if(opened.Count==attached.Length)acquisitionRetries=0;
      }
      var polling=ClockMs();
      rebindMs=polling-started;
@@ -291,6 +297,7 @@ class Bridge {
   var snapshot=latestInput??new InputSnapshot(0,null,discoveredControllers??NoControllers,NoSamples,settings,0,0,"");
   var now=ClockMs();
   var result=ProjectState(snapshot,game,now,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+  result["layoutRevision"]=Volatile.Read(ref layoutRevision);
   var led=latestLed;
   if(led!=null&&now<led.ExpiresAt){
    result["leds"]=led.Values;
