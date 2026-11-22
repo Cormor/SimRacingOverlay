@@ -3,20 +3,50 @@
  if(new URLSearchParams(location.search).get('desktop')==='1')return;
  const L=window.OverlayLayout,canvas=document.getElementById('overlay');
  const editing=new URLSearchParams(location.search).get('edit')==='1'&&!!window.desktopOverlay;
- let loadRequest=0,faceDownloadCount=0;
+ let loadRequest=0,faceDownloadCount=0,pendingLayout=false;
  let selected=[],drag=null,saveTimer=null,dirty=false,revision=0,loaded=false,notice=null;
  const undo=[],redo=[];
  const snapshot=()=>JSON.stringify(L.get());
+ const refreshLayout=()=>{void load();};
  function remember(before){if(before===snapshot())return;undo.push(before);if(undo.length>80)undo.shift();redo.length=0;}
  function message(text,error=false){if(notice){notice.textContent=text;notice.classList.toggle('error',error);}}
- async function load(){if(dirty||drag||window.WheelFaces?.busy())return;const request=++loadRequest,atRevision=revision;try{const r=await fetch('assets/layout.json',{cache:'no-store'});if(!r.ok)return;const value=await r.json();if(request!==loadRequest||atRevision!==revision||dirty||drag||window.WheelFaces?.busy())return;L.set(value);loaded=true;if(editing)sync();}catch{message('读取布局失败，稍后自动重试',true);}}
- function save(){dirty=true;revision++;clearTimeout(saveTimer);message('正在保存…');saveTimer=setTimeout(async()=>{const token=revision;try{const r=await desktopOverlay.saveLayout(L.get());if(!r?.ok)throw Error(r?.error||'写入未完成');if(token===revision){dirty=false;message('已保存');}}catch(e){message('保存失败：'+e.message+'；修改仍保留在编辑器',true);}},180);}
+ function refreshPendingLayout(){if(pendingLayout)void load();}
+ let layoutRetry=null;
+ async function load(attempt=0){
+  clearTimeout(layoutRetry);layoutRetry=null;
+  if(dirty||drag||window.WheelFaces?.busy()){pendingLayout=true;return;}
+  const request=++loadRequest,atRevision=revision;
+  try{
+   const response=await fetch('assets/layout.json',{cache:'no-store'});
+   if(!response.ok)throw Error(response.status);
+   const value=await response.json();
+   if(request!==loadRequest)return;
+   if(atRevision!==revision||dirty||drag||window.WheelFaces?.busy()){pendingLayout=true;return;}
+   pendingLayout=false;L.set(value);loaded=true;if(editing)sync();
+  }catch{
+   if(request!==loadRequest)return;
+   if(attempt<2)layoutRetry=setTimeout(()=>{void load(attempt+1);},250*(attempt+1));
+   else message('读取布局失败，等待布局更新',true);
+  }
+ }
+ addEventListener('unload',()=>clearTimeout(layoutRetry),{once:true});
+ function save(){dirty=true;revision++;clearTimeout(saveTimer);message('正在保存…');saveTimer=setTimeout(async()=>{const token=revision;try{const r=await desktopOverlay.saveLayout(L.get());if(!r?.ok)throw Error(r?.error||'写入未完成');if(token===revision){dirty=false;message('已保存');refreshPendingLayout();}}catch(e){message('保存失败：'+e.message+'；修改仍保留在编辑器',true);}},180);}
  function flushSaveNow(){if(faceDownloadCount>0||window.WheelFaces?.busy()){const error='盘面正在下载或载入，请完成后再保存退出';message(error,true);return {ok:false,error};}clearTimeout(saveTimer);revision++;if(!dirty)return {ok:true};try{const r=desktopOverlay.saveLayoutNow(L.get());dirty=!r.ok;if(!r.ok)message('保存失败：'+r.error,true);return r;}catch(e){message('保存失败：'+e.message,true);return {ok:false,error:e.message};}}
  window.overlayEditor={reloadLayout:load,flushSaveNow,getStatus:()=>({editing,loaded,dirty,revision})};
  addEventListener('beforeunload',e=>{if(dirty&&!flushSaveNow().ok){e.preventDefault();e.returnValue=false;}});
  window.desktopOverlay?.onScene(scene=>L.setDesktopStage(scene));
  // Pure QA windows do not contact the live layout or any device.
- if(new URLSearchParams(location.search).get('qa')!=='1'){load();setInterval(load,1200);}else loaded=true;
+ if(new URLSearchParams(location.search).get('qa')==='1')loaded=true;
+ else{
+  const subscription=window.desktopOverlay?.onLayoutChanged;
+  if(subscription){
+   const unsubscribe=subscription(()=>{void load();});
+   addEventListener('unload',unsubscribe,{once:true});
+  }else{
+   window.addEventListener('overlay-layout-change',refreshLayout);
+  }
+  void load();
+ }
  if(!editing)return;
  document.body.classList.add('editing');canvas.tabIndex=0;L.setEditing(true);
  const panel=document.createElement('aside');panel.id='editor';panel.setAttribute('aria-label','叠加层布局编辑器');
@@ -77,9 +107,10 @@
    row.onpointerenter=()=>WheelFaces.highlight(c.id);row.onpointerleave=()=>WheelFaces.highlight(null);row.append(name,input,learn);return row;});el('buttonMaps').replaceChildren(...nodes);
  }
  el('resetButtonMaps').onclick=()=>edit(v=>{delete v.wheel.buttonMaps[v.wheel.faceId];});
- const inputTimer=setInterval(()=>{const pressed=window.overlayDiagnostics?.getState().connected?window.overlayDiagnostics.getState().buttons||[]:[];el('inputButtons').textContent=pressed.length?'当前按下：'+pressed.join(' · '):'当前没有按键按下';if(learning){const fresh=pressed.filter(n=>!learning.held.has(n));learning.held=new Set(pressed);if(fresh.length){const id=learning.id;learning=null;writeMapping(id,fresh);wheelStatus('按键映射已更新');}}},80);
- addEventListener('beforeunload',()=>clearInterval(inputTimer));
- window.addEventListener('wheel-face-change',()=>{mapSignature='';if(!userFaceChoice&&catalog.some(f=>f.id===L.get().wheel.faceId))el('wheelFace').value=L.get().wheel.faceId;syncWheel();const face=WheelFaces.get();if(face.error)wheelStatus(face.error,true);});
+ function refreshButtons(){const pressed=window.overlayDiagnostics?.getState().connected?window.overlayDiagnostics.getState().buttons||[]:[];el('inputButtons').textContent=pressed.length?'当前按下：'+pressed.join(' · '):'当前没有按键按下';if(learning){const fresh=pressed.filter(n=>!learning.held.has(n));learning.held=new Set(pressed);if(fresh.length){const id=learning.id;learning=null;writeMapping(id,fresh);wheelStatus('按键映射已更新');}}}
+ window.addEventListener('overlay-buttons-change',refreshButtons);
+ refreshButtons();
+ window.addEventListener('wheel-face-change',()=>{refreshPendingLayout();mapSignature='';if(!userFaceChoice&&catalog.some(f=>f.id===L.get().wheel.faceId))el('wheelFace').value=L.get().wheel.faceId;syncWheel();const face=WheelFaces.get();if(face.error)wheelStatus(face.error,true);});
  refreshCatalog();
  const ids=()=>selected.filter(id=>!L.get().controls[id].locked);
  function choose(next){selected=[...new Set(next)];L.select(selected);sync();}
@@ -139,7 +170,7 @@
   else{const b=drag.b,ratio=Math.max(.05,1+(Math.abs(dx/b.w)>Math.abs(dy/b.h)?2*dx/b.w:2*dy/b.h));options={scaleX:ratio};}
   L.set(L.transform(drag.value,drag.ids,options));sync();
  };
- function end(e,cancel=false){if(!drag)return;if(cancel&&drag.mode!=='marquee'){const v=JSON.parse(drag.before);v.stage=L.stage();L.set(v);}else if(drag.mode!=='marquee'){remember(drag.before);save();}drag=null;marquee.style.display='none';if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);sync();}
+ function end(e,cancel=false){if(!drag)return;if(cancel&&drag.mode!=='marquee'){const v=JSON.parse(drag.before);v.stage=L.stage();L.set(v);}else if(drag.mode!=='marquee'){remember(drag.before);save();}drag=null;marquee.style.display='none';if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);sync();refreshPendingLayout();}
  canvas.onpointerup=e=>end(e);canvas.onpointercancel=e=>end(e,true);
  addEventListener('keydown',e=>{if(e.target.matches('input,select,textarea'))return;const mod=e.ctrlKey||e.metaKey;if(mod&&e.key.toLowerCase()==='a'){e.preventDefault();el('selectAll').click();}else if(mod&&e.key.toLowerCase()==='z'){e.preventDefault();(e.shiftKey?el('redo'):el('undo')).click();}else if(mod&&e.key.toLowerCase()==='y'){e.preventDefault();el('redo').click();}else if(e.key==='Escape'){if(drag)end({pointerId:drag.pointerId},true);else choose([]);}else if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const step=(e.shiftKey?10:1)/L.stage().scale;transform({dx:e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0,dy:e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0});}});
  const grip=el('panelGrip');let panelDrag=null;

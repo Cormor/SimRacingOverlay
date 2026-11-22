@@ -47,6 +47,14 @@ function paintWheelLayer(kind,key,density,draw){
 const params=new URLSearchParams(location.search),demo=params.get('demo')==='1',qa=params.get('qa')==='1';
 let paintScale=1,previewDrawing=false,activeComponentTokens=null,activeComponentAssistance='none';
 let state={connected:false},angle=0,qaClock=null;
+let layoutStamp=null,inputButtonsStamp='';
+function notifyEditorState(){
+ const stamp=state.connected?(state.buttons||[]).join(','):'';
+ if(stamp!==inputButtonsStamp){inputButtonsStamp=stamp;window.dispatchEvent?.(new Event('overlay-buttons-change'));}
+ if(!Number.isInteger(state.layoutRevision))return;
+ const revision=(state.transport?.epoch||'')+':'+state.layoutRevision;
+ if(revision!==layoutStamp){layoutStamp=revision;window.dispatchEvent?.(new Event('overlay-layout-change'));}
+}
 let paintAngle=0,displayAngle=null,displayFrame=null,displayLastAt=null,lastPaintSignature=null;
 const hardwareInputs=new Map(),retiredHardwareEpochs=new Set();let hardwareEpoch=null,hardwareStatusSample=null,gameSteering=null;
 const transportClock=new TelemetryClock.Clock();
@@ -92,7 +100,7 @@ function heldDisplayReading(name,now,readings=heldReadings){
 let clockRequest=null,clockRetryAt=0,clockRevision=0;
 function clearTimedState(now){
  advanceFeed();hardwareInputs.clear();hardwareStatusSample=null;gameSteering=null;
- lastInputAt=-Infinity;state={connected:false};gBallView=gBallModel?.update(null,now);queueScene(now);
+ lastInputAt=-Infinity;state={connected:false};notifyEditorState();gBallView=gBallModel?.update(null,now);queueScene(now);
 }
 function resetTransportClock(){
  clockRevision++;clockRequest?.abort();clockRequest=null;clockRetryAt=0;transportClock.reset();clearTimedState(performance.now());
@@ -836,7 +844,7 @@ function testState(s,at){
  assistView=assistModel.update(s,qaClock);gBallView=gBallModel?.update(s.connected?s.game:null,qaClock);
 }
 
-let stream=null,streaming=false,streamLast=0,streamOpenedAt=0,feedEpoch=0,pendingFrame=null,processing=false;
+let stream=null,streaming=false,feedEpoch=0,pendingFrame=null,processing=false;
 let inputContext=null,inputContextEpoch=0,lastSourceTime=null;
 function clearAssist(){assistView={fresh:false,unloaded:[false,false,false,false]};}
 function advanceFeed(){feedEpoch++;pendingFrame=null;clearAssist();}
@@ -854,7 +862,7 @@ async function consume(incoming,receivedAt){
   inputContext=context;inputContextEpoch++;clearAssist();
  }
  lastSourceTime=Number.isFinite(game?.sampleTime)?game.sampleTime:null;
- state=incoming;lastInputAt=receivedAt;
+ state=incoming;lastInputAt=receivedAt;notifyEditorState();
  uiInfo.inputProtocol=typeof incoming.hardware?.epoch==='string'?'capture-clock-v2':'unsupported';
  const newGameReading=rememberGameDisplay(game,receivedAt);
  observeSteering(incoming,receivedAt,newGameReading);
@@ -886,39 +894,46 @@ async function consume(incoming,receivedAt){
   queueScene(performance.now());
  }}finally{processing=false;}
 }
+let streamDeadline=null,pollTimer=null,polling=false;
+function armStreamDeadline(source){
+ clearTimeout(streamDeadline);
+ streamDeadline=setTimeout(()=>loseStream(source),400);
+}
+function schedulePoll(delay=0){
+ if(!streaming&&!polling&&pollTimer===null)pollTimer=setTimeout(poll,delay);
+}
 function loseStream(source){
- if(source!==stream||!source)return;source.close();stream=null;const wasOwner=streaming;streaming=false;if(wasOwner){advanceFeed();queueScene(performance.now());}setTimeout(openStream,1000);
+ if(source!==stream||!source)return;clearTimeout(streamDeadline);source.close();stream=null;const wasOwner=streaming;streaming=false;if(wasOwner){advanceFeed();queueScene(performance.now());}schedulePoll();setTimeout(openStream,1000);
 }
 function openStream(){
  if(stream||typeof EventSource==='undefined')return;
  try{
-  const source=new EventSource('/events');stream=source;streamOpenedAt=performance.now();
+  const source=new EventSource('/events');stream=source;armStreamDeadline(source);
   source.onmessage=event=>{
    if(source!==stream)return;
    let incoming;
    try{incoming=JSON.parse(event.data);if(!validSnapshot(incoming))throw Error('Invalid snapshot');}catch{loseStream(source);return;}
    const receivedAt=performance.now();runtimePerf.streamFrames=(runtimePerf.streamFrames||0)+1;
    const frame=publishedFrame(incoming.transport,receivedAt);if(!frame)return;
-   if(!streaming)advanceFeed();streamLast=receivedAt;streaming=true;
+   if(!streaming)advanceFeed();streaming=true;armStreamDeadline(source);clearTimeout(pollTimer);pollTimer=null;
    consume(incoming,frame.at).catch(recordProcessingError);
   };
   source.onerror=()=>loseStream(source);
  }catch{stream=null;setTimeout(openStream,1000);}
 }
 async function poll(){
+ pollTimer=null;if(streaming||polling)return;polling=true;
  const requestAt=performance.now();
- if(stream&&requestAt-(streaming?streamLast:streamOpenedAt)>400)loseStream(stream);
- if(streaming){setTimeout(poll,100);return;}
  const epoch=feedEpoch,revision=clockRevision,controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),1500);let incoming=null,acceptedEpoch=epoch;
  try{
   const r=await fetch('/state',{cache:'no-store',signal:controller.signal});const owned=epoch===feedEpoch&&!streaming;acceptClock(r,requestAt,performance.now(),revision);if(owned)acceptedEpoch=feedEpoch;if(!r.ok)throw Error(r.status);
   incoming=await r.json();if(!validSnapshot(incoming))throw Error('Invalid snapshot');
- }catch(e){incoming=null;if(!streaming&&epoch===feedEpoch){runtimePerf.errors++;advanceFeed();state={connected:false,error:'输入服务已断开'};gameSteering=null;gBallView=gBallModel?.update(null,performance.now());queueScene(performance.now());}}
+ }catch(e){incoming=null;if(!streaming&&epoch===feedEpoch){runtimePerf.errors++;advanceFeed();state={connected:false,error:'输入服务已断开'};notifyEditorState();gameSteering=null;gBallView=gBallModel?.update(null,performance.now());queueScene(performance.now());}}
  finally{clearTimeout(timeout);}
  // Network acquisition and calculation failures have different owners.
  // HTTP keeps acquiring the newest input while a model sample is in flight.
  if(incoming&&!streaming&&acceptedEpoch===feedEpoch){const now=performance.now();observeCost('network',now-requestAt);const frame=publishedFrame(incoming.transport,now);if(frame)consume(incoming,frame.at).catch(recordProcessingError);}
- setTimeout(poll,Math.max(0,1000/60-(performance.now()-requestAt)));
+ polling=false;schedulePoll(Math.max(0,1000/60-(performance.now()-requestAt)));
 }
 if(!demo&&!qa){openStream();openSteeringStream();poll();}startSceneClock();
 const previewFactory=typeof ComponentPreview!=='undefined'?ComponentPreview.createFactory({

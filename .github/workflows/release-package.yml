@@ -66,6 +66,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Node check failed: src/test_wheel_store.js" }
           node src/test_electron_wheel_transport.js
           if ($LASTEXITCODE -ne 0) { throw "Node check failed: src/test_electron_wheel_transport.js" }
+          node src/test_overlay_stream.js --transport-only
+          if ($LASTEXITCODE -ne 0) { throw "Node check failed: notification transport" }
           node src/test_layout_editor.js
           if ($LASTEXITCODE -ne 0) { throw "Node check failed: src/test_layout_editor.js" }
           node src/test_relative_layout.js

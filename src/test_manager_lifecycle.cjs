@@ -63,7 +63,7 @@ async function selectionCloseBoundary(port){
 }
 async function setupOwnership(port){
  const win=create();await win.loadURL(`http://127.0.0.1:${port}/setup.html?embedded=1`);
- await js(win,`window.__requests=[];window.fetch=(url,options={})=>new Promise((resolve,reject)=>__requests.push({url,options,done(value,status=200){resolve({ok:status>=200&&status<300,status,json:async()=>structuredClone(value)});},fail(){reject(Error('fixture connection lost'));}}));InputSetup.setActive(true);`);
+ await js(win,`window.EventSource=undefined;window.__requests=[];window.fetch=(url,options={})=>new Promise((resolve,reject)=>__requests.push({url,options,done(value,status=200){resolve({ok:status>=200&&status<300,status,json:async()=>structuredClone(value)});},fail(){reject(Error('fixture connection lost'));}}));InputSetup.setActive(true);`);
  const old=await js(win,'__requests.length');assert.equal(old,2);
  await js(win,`InputSetup.setActive(false);InputSetup.setActive(true);`);assert.equal(await js(win,'__requests[0].options.signal.aborted&&__requests[1].options.signal.aborted'),true);
  await js(win,`__requests[0].done({steeringRange:1800,inputs:{},buttonMap:[]});__requests[1].done({angle:88,devices:[]});`);await pause(20);assert.equal(await js(win,'loaded'),false,'old config cannot publish');assert.equal(await js(win,'state.angle??null'),null,'old state cannot publish');

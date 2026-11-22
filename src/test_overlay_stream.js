@@ -2,17 +2,17 @@
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
 const source=fs.readFileSync(path.join(__dirname,'../overlay.js'),'utf8');
 function fixture(withEvents=true){
- let now=0,id=0,gSamples=0;const timers=new Map(),events=[],requests=[],jobs=[];
+ let now=0,id=0,gSamples=0;const timers=new Map(),events=[],requests=[],jobs=[],notifications=[];
  const ctx=new Proxy({}, {get:()=>()=>{},set:()=>true});
- const sandbox={document:{addEventListener(){},getElementById:()=>({getContext:()=>ctx})},Image:class{},URLSearchParams,location:{search:''},window:{addEventListener(){}},performance:{now:()=>now},AbortController,
+ const sandbox={document:{addEventListener(){},getElementById:()=>({getContext:()=>ctx})},Image:class{},URLSearchParams,location:{search:''},window:{addEventListener(){},dispatchEvent(event){notifications.push(event.type);}},Event:class {constructor(type){this.type=type;}},performance:{now:()=>now},AbortController,
   OverlayLayout:{begin(){},group(){},flush(){},capture(){return [];}},DrivingAssist:{Model:class {update(){return {fresh:false};}}},
-  TelemetryProcessor:{Client:class {run(state,at,context){return new Promise(resolve=>jobs.push({state,at,context,resolve}));}status(){return {mode:'worker',session:1};}dispose(){}}},
+  TelemetryProcessor:{Client:class {ready(){return Promise.resolve({ok:true});}run(state,at,context){return new Promise(resolve=>jobs.push({state,at,context,resolve}));}status(){return {mode:'worker',session:1};}dispose(){}}},
   GBall:{Model:class {update(){gSamples++;return null;}age(){return null;}}},
   setTimeout(fn,delay){timers.set(++id,{fn,delay});return id;},clearTimeout(key){timers.delete(key);},requestAnimationFrame(){},
   TelemetryClock:require('../telemetry-clock'),fetch(url,options){return new Promise((resolve,reject)=>requests.push({url,options,resolve,reject}));},console};
  if(withEvents)sandbox.EventSource=class {constructor(url){this.url=url;events.push(this);}close(){this.closed=true;}emit(packet,extra={}){this.onmessage({data:JSON.stringify({connected:true,transport:{epoch:'fixture',publishedMs:now+1000},game:{packet},...extra})});}};
  vm.createContext(sandbox);vm.runInContext(source,sandbox);vm.runInContext("transportClock.observe('fixture',999,0,0)",sandbox);
- return {sandbox,timers,events,requests,jobs,setNow:n=>now=n,gSamples:()=>gSamples,diag:sandbox.window.overlayDiagnostics,run:s=>vm.runInContext(s,sandbox),stream:()=>events.filter(x=>x.url==='/events').at(-1)};
+ return {sandbox,timers,events,requests,jobs,notifications,setNow:n=>now=n,gSamples:()=>gSamples,diag:sandbox.window.overlayDiagnostics,run:s=>vm.runInContext(s,sandbox),stream:()=>events.filter(x=>x.url==='/events').at(-1)};
 }
 const tick=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 const response=(packet,at=0)=>({ok:true,json:async()=>({connected:true,transport:{epoch:'fixture',publishedMs:at+1000},game:{packet}})});
@@ -29,7 +29,7 @@ const reconnect=f=>[...f.timers.values()].filter(t=>t.fn.name==='openStream').at
  first.onerror();assert(first.closed);first.emit(999);assert.equal(f.jobs.length,2);
  f.setNow(1000);f.run('poll()');reconnect(f);const second=f.stream();second.emit(20);
  f.requests[1].resolve(response(13));await tick();finish(f.jobs[2]);await tick();assert.equal(f.diag.getState().game.packet,20);
- f.setNow(2601);f.run('poll()');assert(second.closed);f.requests[2].resolve(response(30,2601));await tick();finish(f.jobs[3]);await tick();assert.equal(f.diag.getState().game.packet,30);
+ f.setNow(2601);f.timers.get(f.run('streamDeadline')).fn();f.run('poll()');assert(second.closed);f.requests[2].resolve(response(30,2601));await tick();finish(f.jobs[3]);await tick();assert.equal(f.diag.getState().game.packet,30);
  reconnect(f);const invalid=f.stream();invalid.onmessage({data:'[]'});assert(invalid.closed);
  const oldServer=fixture(false);const timeout=[...oldServer.timers.values()].find(t=>t.delay===1500);timeout.fn();assert(oldServer.requests[0].options.signal.aborted);
  oldServer.requests[0].reject(Error('aborted'));await tick();assert.equal(oldServer.diag.getState().connected,false);
@@ -48,6 +48,13 @@ const reconnect=f=>[...f.timers.values()].filter(t=>t.fn.name==='openStream').at
  const failed=fixture();const healthyStream=failed.stream();healthyStream.emit(1,{brake:70});failed.jobs[0].resolve({ok:false,error:{code:'model-error',message:'fixture failure'},mode:'worker'});await tick();
  assert(!healthyStream.closed);assert.equal(failed.diag.getState().brake,70);assert.equal(failed.diag.getPerformance().errors,0);assert.equal(failed.diag.getPerformance().processingErrors,1);
  healthyStream.emit(2);finish(failed.jobs[1]);await tick();assert.equal(failed.diag.getAssist().packet,2);
+ const backlog=fixture(),blocked=backlog.stream();blocked.emit(1);backlog.setNow(500);blocked.emit(2,{transport:{epoch:'fixture',publishedMs:1050}});
+ const deadline=backlog.timers.get(backlog.run('streamDeadline'));assert.equal(deadline.delay,400);assert.equal(backlog.run('pollTimer'),null,'healthy SSE schedules no HTTP scans');deadline.fn();assert(blocked.closed,'a connected but stale stream releases ownership to HTTP');
+ const changes=fixture();
+ changes.stream().emit(1,{layoutRevision:1,buttons:[7]});changes.stream().emit(2,{layoutRevision:1,buttons:[7]});
+ changes.stream().emit(3,{layoutRevision:2,buttons:[]});
+ assert.deepEqual(changes.notifications.filter(type=>type.startsWith('overlay-layout')||type.startsWith('overlay-buttons')),['overlay-buttons-change','overlay-layout-change','overlay-buttons-change','overlay-layout-change']);
+ if(process.argv.includes('--transport-only')){console.log('PASS: SSE ownership, disconnect fallback, layout and button notifications');return;}
  // Both native routes share capture identity; duplicates cannot extend life.
  const h=fixture();h.run("observeHardware({epoch:'A',sequence:1,ageMs:10,validForMs:100},{steering:{state:'valid',value:20,ageMs:10}},0)");
  assert.equal(h.run('steeringAt(80)'),20);h.run("observeHardware({epoch:'A',sequence:1,ageMs:0,validForMs:100},{steering:{state:'valid',value:99,ageMs:0}},80)");assert.equal(h.run('steeringAt(91)'),0);assert.equal(h.run('steeringValue(91)'),null,'neutral drawing pose is not a valid zero reading');
@@ -68,8 +75,6 @@ const reconnect=f=>[...f.timers.values()].filter(t=>t.fn.name==='openStream').at
  delayed.setNow(260);fast.onmessage({data:JSON.stringify({transport:{epoch:'fixture',publishedMs:1260},epoch:'fixture',sequence:3,validForMs:100,ageMs:0,state:'valid',angle:110})});
  assert.equal(delayed.run('steeringValue(performance.now())'),110,'current fast input remains immediate');
  delayed.setNow(550);delayed.stream().emit(2,{transport:{epoch:'fixture',publishedMs:1100}});assert.equal(delayed.jobs.length,1,'expired publication never enters the calculation queue');
- const backlog=fixture(),blocked=backlog.stream();blocked.emit(1);backlog.setNow(500);blocked.emit(2,{transport:{epoch:'fixture',publishedMs:1050}});
- assert.equal(backlog.run('streamLast'),0,'old traffic does not renew the accepted stream lifetime');backlog.run('poll()');assert(blocked.closed,'a connected but stale stream releases ownership to HTTP');
  const recalibrated=fixture();recalibrated.stream().emit(1,{hardware:{epoch:'fixture',sequence:1,validForMs:100,channels:{steering:{state:'valid',value:33,ageMs:0}}}});
  recalibrated.setNow(100);recalibrated.run("acceptClock({headers:{get:key=>key==='X-Overlay-Clock-Epoch'?'new-process':'1099'}},100,100)");
  assert.equal(recalibrated.run('steeringValue(performance.now())'),null,'a clock session change immediately invalidates old timed inputs');
